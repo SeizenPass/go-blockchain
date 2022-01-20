@@ -1,0 +1,9 @@
+{
+  "genesis_time": "2022-01-01T00:00:00.000000000Z",
+  "chain_id": "go-blockchain-ledger",
+  "balances": {
+    "miras": 1000000,
+    "beknur": 1000000,
+    "amiran": 1000000
+  }
+}
