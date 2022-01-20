@@ -3,3 +3,5 @@
 {"from":"amiran","to":"beknur","value":2000,"data":""}
 {"from":"amiran","to":"amiran","value":100,"data":"reward"}
 {"from":"beknur","to":"miras","value":1,"data":""}
+{"from":"miras","to":"miras","value":100,"data":"reward"}
+{"from":"miras","to":"amiran","value":100,"data":""}
