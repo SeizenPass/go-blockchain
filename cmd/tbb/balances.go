@@ -28,8 +28,7 @@ func balancesListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List of all balances.",
 		Run: func(cmd *cobra.Command, args []string) {
-			dataDir, _ := cmd.Flags().GetString(flagDataDir)
-			state, err := database.NewStateFromDisk(dataDir)
+			state, err := database.NewStateFromDisk(getDataDirFromCmd(cmd))
 			if err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
