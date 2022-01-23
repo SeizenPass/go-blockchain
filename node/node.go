@@ -11,7 +11,7 @@ const DefaultIP = "127.0.0.1"
 const DefaultHTTPort = 8080
 const endpointStatus = "/node/status"
 
-const endpointSync = "node/sync"
+const endpointSync = "/node/sync"
 const endpointSyncQueryKeyFromBlock = "fromBlock"
 
 const endpointAddPeer = "/node/peer"
