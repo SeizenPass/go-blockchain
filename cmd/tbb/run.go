@@ -19,7 +19,7 @@ func runCmd() *cobra.Command {
 
 			bootstrap := node.NewPeerNode(
 				//TODO: add our own bootstrap node
-				"18.184.213.146",
+				"3.127.248.10",
 				8080,
 				true,
 				true,
