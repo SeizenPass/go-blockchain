@@ -10,7 +10,6 @@ import (
 
 type State struct {
 	Balances  map[Account]uint
-	txMempool []Tx
 
 	dbFile *os.File
 
@@ -42,7 +41,7 @@ func NewStateFromDisk(dataDir string) (*State, error) {
 	}
 
 	scanner := bufio.NewScanner(f)
-	state := &State{balances, make([]Tx, 0), f, Block{}, Hash{}, false}
+	state := &State{balances, f, Block{}, Hash{}, false}
 
 	for scanner.Scan() {
 		if err := scanner.Err(); err != nil {
@@ -106,7 +105,7 @@ func (s *State) AddBlock(b Block) (Hash, error) {
 		return Hash{}, err
 	}
 
-	fmt.Printf("Persisting new Block to disk:\n")
+	fmt.Printf("\nPersisting new Block to disk:\n")
 	fmt.Printf("\t%s\n", blockFsJson)
 
 	_, err = s.dbFile.Write(append(blockFsJson, '\n'))
@@ -147,15 +146,10 @@ func (s *State) copy() State {
 	c.hasGenesisBlock = s.hasGenesisBlock
 	c.latestBlock = s.latestBlock
 	c.latestBlockHash = s.latestBlockHash
-	c.txMempool = make([]Tx, len(s.txMempool))
 	c.Balances = make(map[Account]uint)
 
 	for acc, balance := range s.Balances {
 		c.Balances[acc] = balance
-	}
-
-	for _, tx := range s.txMempool {
-		c.txMempool = append(c.txMempool, tx)
 	}
 
 	return c
@@ -170,6 +164,15 @@ func applyBlock(b Block, s State) error {
 
 	if s.hasGenesisBlock && s.latestBlock.Header.Number > 0 && !reflect.DeepEqual(b.Header.Parent, s.latestBlockHash) {
 		return fmt.Errorf("next block parent hash must be '%x' not '%x'", s.latestBlockHash, b.Header.Parent)
+	}
+
+	hash, err := b.Hash()
+	if err != nil {
+		return err
+	}
+
+	if !IsBlockHashValid(hash) {
+		return fmt.Errorf("invalid block hash %x", hash)
 	}
 
 	return applyTxs(b.TXs, &s)
