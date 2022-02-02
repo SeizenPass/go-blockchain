@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+const DefaultMiner = ""
 const DefaultIP = "127.0.0.1"
 const DefaultHTTPort = 8080
 const endpointStatus = "/node/status"
@@ -19,6 +20,7 @@ const endpointSyncQueryKeyFromBlock = "fromBlock"
 const endpointAddPeer = "/node/peer"
 const endpointAddPeerQueryKeyIP = "ip"
 const endpointAddPeerQueryKeyPort = "port"
+const endpointAddPeerQueryKeyMiner = "miner"
 
 const miningIntervalSeconds = 10
 
@@ -26,6 +28,7 @@ type PeerNode struct {
 	IP string `json:"ip"`
 	Port uint64 `json:"port"`
 	IsBootstrap bool `json:"is_bootstrap"`
+	Account database.Account `json:"account"`
 
 	connected bool
 }
@@ -47,13 +50,13 @@ type Node struct {
 	isMining bool
 }
 
-func New(dataDir string, ip string, port uint64, bootstrap PeerNode) *Node {
+func New(dataDir string, ip string, port uint64, acc database.Account, bootstrap PeerNode) *Node {
 	knownPeers := make(map[string]PeerNode)
 	knownPeers[bootstrap.TcpAddress()] = bootstrap
 
 	return &Node{
 		dataDir: dataDir,
-		info: NewPeerNode(ip, port, false, true),
+		info: NewPeerNode(ip, port, false, acc, true),
 		knownPeers: knownPeers,
 		pendingTXs: make(map[string]database.Tx),
 		archivedTXs: make(map[string]database.Tx),
@@ -63,8 +66,8 @@ func New(dataDir string, ip string, port uint64, bootstrap PeerNode) *Node {
 	}
 }
 
-func NewPeerNode(ip string, port uint64, isBootstrap bool, connected bool) PeerNode {
-	return PeerNode{ip, port, isBootstrap, connected}
+func NewPeerNode(ip string, port uint64, isBootstrap bool, acc database.Account, connected bool) PeerNode {
+	return PeerNode{ip, port, isBootstrap, acc, connected}
 }
 
 func (n *Node) Run(ctx context.Context) error {
@@ -158,6 +161,7 @@ func (n *Node) minePendingTXs(ctx context.Context) error {
 	blockToMine := NewPendingBlock(
 			n.state.LatestBlockHash(),
 			n.state.LatestBlock().Header.Number+1,
+			n.info.Account,
 			n.getPendingTXsAsArray(),
 		)
 

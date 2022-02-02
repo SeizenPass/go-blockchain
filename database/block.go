@@ -8,6 +8,8 @@ import (
 	"fmt"
 )
 
+const BlockReward = 100
+
 type Hash [32]byte
 
 func (h Hash) MarshalText() ([]byte, error) {
@@ -39,6 +41,7 @@ type BlockHeader struct {
 	Number uint64 `json:"number"`
 	Nonce uint32 `json:"nonce"`
 	Time uint64 `json:"time"`
+	Miner Account `json:"miner"`
 }
 
 type BlockFS struct {
@@ -46,8 +49,8 @@ type BlockFS struct {
 	Value Block `json:"block"`
 }
 
-func NewBlock(parent Hash, number uint64, nonce uint32, time uint64, txs []Tx) Block {
-	return Block{BlockHeader{parent, number, nonce, time}, txs}
+func NewBlock(parent Hash, number uint64, nonce uint32, time uint64, miner Account, txs []Tx) Block {
+	return Block{BlockHeader{parent, number, nonce, time, miner}, txs}
 }
 
 func (b Block) Hash() (Hash, error) {
