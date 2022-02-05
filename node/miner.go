@@ -45,7 +45,7 @@ func Mine(ctx context.Context, pb PendingBlock) (database.Block, error) {
 		nonce = generateNonce()
 
 		if attempt%1000000 == 0 || attempt == 1 {
-			fmt.Printf("Mining %d Pending TXs. Attempt: %d\n", len(pb.txs), attempt)
+			fmt.Printf("Mining %d Pending TXs. Attempt: %d\t Nonce: %d\n", len(pb.txs), attempt, nonce)
 		}
 
 		block = database.NewBlock(pb.parent, pb.number, nonce, pb.time, pb.miner, pb.txs)

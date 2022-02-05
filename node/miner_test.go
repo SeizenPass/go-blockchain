@@ -49,7 +49,7 @@ func TestMine(t *testing.T) {
 	}
 
 	if !database.IsBlockHashValid(minedBlockHash) {
-		t.Fatal()
+		t.Fatalf("mined block is not valid, it has hash %s\n", minedBlockHash.Hex())
 	}
 
 	if minedBlock.Header.Miner != miner {
@@ -72,11 +72,10 @@ func TestMineWithTimeout(t *testing.T) {
 func createRandomPendingBlock(miner database.Account) PendingBlock {
 	return NewPendingBlock(
 			database.Hash{},
-			1,
+			0,
 			miner,
 			[]database.Tx{
-				database.NewTx("miras", "miras", 3, ""),
-				database.NewTx("miras", "miras", 700, "reward"),
+				database.NewTx("miras", "amiran", 3, ""),
 			},
 		)
 }

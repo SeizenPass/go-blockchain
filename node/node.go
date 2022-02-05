@@ -160,7 +160,7 @@ func (n *Node) mine(ctx context.Context) error {
 func (n *Node) minePendingTXs(ctx context.Context) error {
 	blockToMine := NewPendingBlock(
 			n.state.LatestBlockHash(),
-			n.state.LatestBlock().Header.Number+1,
+			n.state.NextBlockNumber(),
 			n.info.Account,
 			n.getPendingTXsAsArray(),
 		)
