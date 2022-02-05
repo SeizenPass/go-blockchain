@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"sort"
 )
 
 type State struct {
@@ -186,6 +187,10 @@ func applyBlock(b Block, s *State) error {
 }
 
 func applyTxs(txs []Tx, s *State) error {
+	sort.Slice(txs, func(i, j int) bool {
+		return txs[i].Time < txs[j].Time
+	})
+
 	for _, tx := range txs {
 		err := applyTx(tx, s)
 		if err != nil {
