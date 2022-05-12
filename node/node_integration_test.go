@@ -21,8 +21,8 @@ func TestNode_Run(t *testing.T) {
 
 	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
 	err = n.Run(ctx)
-	if err.Error() != "http: Server closed" {
-		t.Fatal("node server was suppose to close after 5s")
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -34,12 +34,12 @@ func TestNode_Mining(t *testing.T) {
 	}
 
 	nInfo := NewPeerNode(
-			"127.0.0.1",
-			8085,
-			false,
-			database.NewAccount(""),
-			true,
-		)
+		"127.0.0.1",
+		8085,
+		false,
+		database.NewAccount(""),
+		true,
+	)
 
 	n := New(datadir, nInfo.IP, nInfo.Port, database.NewAccount("miras"), nInfo)
 	ctx, closeNode := context.WithTimeout(context.Background(), time.Minute*30)
@@ -51,7 +51,7 @@ func TestNode_Mining(t *testing.T) {
 	}()
 
 	go func() {
-		time.Sleep(time.Second * miningIntervalSeconds + 2)
+		time.Sleep(time.Second*miningIntervalSeconds + 2)
 		tx := database.NewTx("miras", "amiran", 2, "")
 		_ = n.AddPendingTX(tx, nInfo)
 	}()
@@ -104,14 +104,14 @@ func TestNode_MiningStopsOnNewSyncedBlock(t *testing.T) {
 
 	//TODO should be corrected to the true block with true nonce
 	/*
-	Mined new Block '000000b1a1afa8f262badf59a5aef2ee1d35775b6b7320f2dfcc411db4476f4a' using PoW����:
-	        Height: '1'
-	        Nonce: '4028503425'
-	        Created: '1643913265'
-	        Miner: 'miras'
-	        Parent: '0000000000000000000000000000000000000000000000000000000000000000'
-	        Attempt: '120997454'
-	        Time: 26m52.629146s
+		Mined new Block '000000b1a1afa8f262badf59a5aef2ee1d35775b6b7320f2dfcc411db4476f4a' using PoW����:
+		        Height: '1'
+		        Nonce: '4028503425'
+		        Created: '1643913265'
+		        Miner: 'miras'
+		        Parent: '0000000000000000000000000000000000000000000000000000000000000000'
+		        Attempt: '120997454'
+		        Time: 26m52.629146s
 	*/
 	validPreMinedPb := NewPendingBlock(database.Hash{}, 0, mirasAcc, []database.Tx{tx1})
 	validSyncedBlock, err := Mine(ctx, validPreMinedPb)
@@ -178,7 +178,6 @@ func TestNode_MiningStopsOnNewSyncedBlock(t *testing.T) {
 
 	go func() {
 		time.Sleep(time.Second * 2)
-
 
 		startingMirasBalance := n.state.Balances[mirasAcc]
 		startingAmiranBalance := n.state.Balances[amiranAcc]
