@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/hex"
 	"github.com/SeizenPass/go-blockchain/database"
+	"github.com/SeizenPass/go-blockchain/wallet"
+	"github.com/ethereum/go-ethereum/common"
 	"testing"
 	"time"
 )
@@ -33,7 +35,7 @@ func TestInvalidBlockHash(t *testing.T) {
 }
 
 func TestMine(t *testing.T) {
-	miner := database.NewAccount("miras")
+	miner := database.NewAccount(wallet.MirasAccount)
 	pendingBlock := createRandomPendingBlock(miner)
 
 	ctx := context.Background()
@@ -52,13 +54,13 @@ func TestMine(t *testing.T) {
 		t.Fatalf("mined block is not valid, it has hash %s\n", minedBlockHash.Hex())
 	}
 
-	if minedBlock.Header.Miner != miner {
+	if minedBlock.Header.Miner.String() != miner.String() {
 		t.Fatal("mined block miner should equal miner from pending block")
 	}
 }
 
 func TestMineWithTimeout(t *testing.T) {
-	miner := database.NewAccount("miras")
+	miner := database.NewAccount(wallet.MirasAccount)
 	pendingBlock := createRandomPendingBlock(miner)
 
 	ctx, _ := context.WithTimeout(context.Background(), time.Microsecond*100)
@@ -69,13 +71,14 @@ func TestMineWithTimeout(t *testing.T) {
 	}
 }
 
-func createRandomPendingBlock(miner database.Account) PendingBlock {
+func createRandomPendingBlock(miner common.Address) PendingBlock {
 	return NewPendingBlock(
-			database.Hash{},
-			0,
-			miner,
-			[]database.Tx{
-				database.NewTx("miras", "amiran", 3, ""),
-			},
-		)
+		database.Hash{},
+		0,
+		miner,
+		[]database.Tx{
+			database.NewTx(database.NewAccount(wallet.MirasAccount),
+				database.NewAccount(wallet.AmiranAccount), 3, ""),
+		},
+	)
 }

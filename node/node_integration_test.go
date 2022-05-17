@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/SeizenPass/go-blockchain/database"
 	"github.com/SeizenPass/go-blockchain/fs"
+	"github.com/SeizenPass/go-blockchain/wallet"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,7 +18,7 @@ func TestNode_Run(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	n := New(datadir, "127.0.0.1", 8085, database.NewAccount("miras"), PeerNode{})
+	n := New(datadir, "127.0.0.1", 8085, database.NewAccount(wallet.MirasAccount), PeerNode{})
 
 	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
 	err = n.Run(ctx)
@@ -27,6 +28,9 @@ func TestNode_Run(t *testing.T) {
 }
 
 func TestNode_Mining(t *testing.T) {
+	miras := database.NewAccount(wallet.MirasAccount)
+	amiran := database.NewAccount(wallet.AmiranAccount)
+
 	datadir := getTestDataDirPath()
 	err := fs.RemoveDir(datadir)
 	if err != nil {
@@ -41,18 +45,18 @@ func TestNode_Mining(t *testing.T) {
 		true,
 	)
 
-	n := New(datadir, nInfo.IP, nInfo.Port, database.NewAccount("miras"), nInfo)
+	n := New(datadir, nInfo.IP, nInfo.Port, miras, nInfo)
 	ctx, closeNode := context.WithTimeout(context.Background(), time.Minute*30)
 
 	go func() {
 		time.Sleep(time.Second * miningIntervalSeconds / 3)
-		tx := database.NewTx("miras", "amiran", 1, "")
+		tx := database.NewTx(miras, amiran, 1, "")
 		_ = n.AddPendingTX(tx, nInfo)
 	}()
 
 	go func() {
 		time.Sleep(time.Second*miningIntervalSeconds + 2)
-		tx := database.NewTx("miras", "amiran", 2, "")
+		tx := database.NewTx(miras, amiran, 2, "")
 		_ = n.AddPendingTX(tx, nInfo)
 	}()
 
@@ -78,6 +82,9 @@ func TestNode_Mining(t *testing.T) {
 }
 
 func TestNode_MiningStopsOnNewSyncedBlock(t *testing.T) {
+	miras := database.NewAccount(wallet.MirasAccount)
+	amiran := database.NewAccount(wallet.AmiranAccount)
+
 	datadir := getTestDataDirPath()
 	err := fs.RemoveDir(datadir)
 	if err != nil {
@@ -92,14 +99,11 @@ func TestNode_MiningStopsOnNewSyncedBlock(t *testing.T) {
 		true,
 	)
 
-	mirasAcc := database.NewAccount("miras")
-	amiranAcc := database.NewAccount("amiran")
-
-	n := New(datadir, nInfo.IP, nInfo.Port, amiranAcc, nInfo)
+	n := New(datadir, nInfo.IP, nInfo.Port, amiran, nInfo)
 	ctx, closeNode := context.WithTimeout(context.Background(), time.Minute*30)
 
-	tx1 := database.NewTx("miras", "amiran", 1, "")
-	tx2 := database.NewTx("miras", "amiran", 2, "")
+	tx1 := database.NewTx(miras, amiran, 1, "")
+	tx2 := database.NewTx(miras, amiran, 2, "")
 	tx2Hash, _ := tx2.Hash()
 
 	//TODO should be corrected to the true block with true nonce
@@ -113,7 +117,7 @@ func TestNode_MiningStopsOnNewSyncedBlock(t *testing.T) {
 		        Attempt: '120997454'
 		        Time: 26m52.629146s
 	*/
-	validPreMinedPb := NewPendingBlock(database.Hash{}, 0, mirasAcc, []database.Tx{tx1})
+	validPreMinedPb := NewPendingBlock(database.Hash{}, 0, miras, []database.Tx{tx1})
 	validSyncedBlock, err := Mine(ctx, validPreMinedPb)
 	if err != nil {
 		t.Fatal(err)
@@ -179,13 +183,13 @@ func TestNode_MiningStopsOnNewSyncedBlock(t *testing.T) {
 	go func() {
 		time.Sleep(time.Second * 2)
 
-		startingMirasBalance := n.state.Balances[mirasAcc]
-		startingAmiranBalance := n.state.Balances[amiranAcc]
+		startingMirasBalance := n.state.Balances[miras]
+		startingAmiranBalance := n.state.Balances[amiran]
 
 		<-ctx.Done()
 
-		endMirasBalance := n.state.Balances[mirasAcc]
-		endAmiranBalance := n.state.Balances[amiranAcc]
+		endMirasBalance := n.state.Balances[miras]
+		endAmiranBalance := n.state.Balances[amiran]
 
 		expectedMirasBalance := startingMirasBalance - tx1.Value - tx2.Value + database.BlockReward
 		expectedAmiranBalance := startingAmiranBalance + tx1.Value + tx2.Value + database.BlockReward

@@ -5,11 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/SeizenPass/go-blockchain/database"
+	"github.com/SeizenPass/go-blockchain/wallet"
+	"github.com/ethereum/go-ethereum/common"
 	"net/http"
 	"time"
 )
 
-const DefaultMiner = ""
+const DefaultBootstrapIp = "127.0.0.1"
+const DefaultBootstrapPort = 8080
+const DefaultBootstrapAcc = wallet.MirasAccount
+const DefaultMiner = "0x0000000000000000000000000000000000000000"
 const DefaultIP = "127.0.0.1"
 const DefaultHTTPort = 8080
 const endpointStatus = "/node/status"
@@ -25,10 +30,10 @@ const endpointAddPeerQueryKeyMiner = "miner"
 const miningIntervalSeconds = 10
 
 type PeerNode struct {
-	IP string `json:"ip"`
-	Port uint64 `json:"port"`
-	IsBootstrap bool `json:"is_bootstrap"`
-	Account database.Account `json:"account"`
+	IP          string         `json:"ip"`
+	Port        uint64         `json:"port"`
+	IsBootstrap bool           `json:"is_bootstrap"`
+	Account     common.Address `json:"account"`
 
 	connected bool
 }
@@ -39,34 +44,34 @@ func (pn PeerNode) TcpAddress() string {
 
 type Node struct {
 	dataDir string
-	info PeerNode
+	info    PeerNode
 
-	state *database.State
-	knownPeers map[string]PeerNode
-	pendingTXs map[string]database.Tx
-	archivedTXs map[string]database.Tx
+	state           *database.State
+	knownPeers      map[string]PeerNode
+	pendingTXs      map[string]database.Tx
+	archivedTXs     map[string]database.Tx
 	newSyncedBlocks chan database.Block
-	newPendingTXs chan database.Tx
-	isMining bool
+	newPendingTXs   chan database.Tx
+	isMining        bool
 }
 
-func New(dataDir string, ip string, port uint64, acc database.Account, bootstrap PeerNode) *Node {
+func New(dataDir string, ip string, port uint64, acc common.Address, bootstrap PeerNode) *Node {
 	knownPeers := make(map[string]PeerNode)
 	knownPeers[bootstrap.TcpAddress()] = bootstrap
 
 	return &Node{
-		dataDir: dataDir,
-		info: NewPeerNode(ip, port, false, acc, true),
-		knownPeers: knownPeers,
-		pendingTXs: make(map[string]database.Tx),
-		archivedTXs: make(map[string]database.Tx),
+		dataDir:         dataDir,
+		info:            NewPeerNode(ip, port, false, acc, true),
+		knownPeers:      knownPeers,
+		pendingTXs:      make(map[string]database.Tx),
+		archivedTXs:     make(map[string]database.Tx),
 		newSyncedBlocks: make(chan database.Block),
-		newPendingTXs: make(chan database.Tx, 10000),
-		isMining: false,
+		newPendingTXs:   make(chan database.Tx, 10000),
+		isMining:        false,
 	}
 }
 
-func NewPeerNode(ip string, port uint64, isBootstrap bool, acc database.Account, connected bool) PeerNode {
+func NewPeerNode(ip string, port uint64, isBootstrap bool, acc common.Address, connected bool) PeerNode {
 	return PeerNode{ip, port, isBootstrap, acc, connected}
 }
 
@@ -168,11 +173,11 @@ func (n *Node) mine(ctx context.Context) error {
 
 func (n *Node) minePendingTXs(ctx context.Context) error {
 	blockToMine := NewPendingBlock(
-			n.state.LatestBlockHash(),
-			n.state.NextBlockNumber(),
-			n.info.Account,
-			n.getPendingTXsAsArray(),
-		)
+		n.state.LatestBlockHash(),
+		n.state.NextBlockNumber(),
+		n.info.Account,
+		n.getPendingTXsAsArray(),
+	)
 
 	minedBlock, err := Mine(ctx, blockToMine)
 	if err != nil {
