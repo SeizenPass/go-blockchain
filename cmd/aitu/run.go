@@ -12,7 +12,7 @@ import (
 func runCmd() *cobra.Command {
 	var runCmd = &cobra.Command{
 		Use:   "run",
-		Short: "Launches the TBB node and its HTTP API",
+		Short: "Launches the AITU node and its HTTP API",
 		Run: func(cmd *cobra.Command, args []string) {
 			miner, _ := cmd.Flags().GetString(flagMiner)
 			ip, _ := cmd.Flags().GetString(flagIP)
@@ -21,7 +21,7 @@ func runCmd() *cobra.Command {
 			bootstrapPort, _ := cmd.Flags().GetUint64(flagBootstrapPort)
 			bootstrapAcc, _ := cmd.Flags().GetString(flagBootstrapAcc)
 
-			fmt.Println("Launching TBB node and its HTTP API...")
+			fmt.Println("Launching AITU node and its HTTP API...")
 
 			bootstrap := node.NewPeerNode(
 				//TODO: add our own bootstrap node

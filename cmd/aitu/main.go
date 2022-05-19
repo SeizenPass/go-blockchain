@@ -16,20 +16,20 @@ const flagBootstrapIp = "bootstrap-ip"
 const flagBootstrapPort = "bootstrap-port"
 
 func main() {
-	var tbbCmd = &cobra.Command{
-		Use:   "tbb",
+	var aituCmd = &cobra.Command{
+		Use:   "aitu",
 		Short: "The Blockchain Bar CLI",
 		Run: func(cmd *cobra.Command, args []string) {
 		},
 	}
 
-	tbbCmd.AddCommand(migrateCmd())
-	tbbCmd.AddCommand(versionCmd)
-	tbbCmd.AddCommand(walletCmd())
-	tbbCmd.AddCommand(balancesCmd())
-	tbbCmd.AddCommand(runCmd())
+	aituCmd.AddCommand(migrateCmd())
+	aituCmd.AddCommand(versionCmd)
+	aituCmd.AddCommand(walletCmd())
+	aituCmd.AddCommand(balancesCmd())
+	aituCmd.AddCommand(runCmd())
 
-	err := tbbCmd.Execute()
+	err := aituCmd.Execute()
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

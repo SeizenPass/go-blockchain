@@ -220,5 +220,5 @@ func TestNode_MiningStopsOnNewSyncedBlock(t *testing.T) {
 }
 
 func getTestDataDirPath() string {
-	return filepath.Join(os.TempDir(), ".tbb_test")
+	return filepath.Join(os.TempDir(), ".aitu_test")
 }
