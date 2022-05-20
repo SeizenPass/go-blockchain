@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"github.com/SeizenPass/go-blockchain/wallet"
-	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/spf13/cobra"
 	"os"
@@ -34,15 +33,13 @@ func walletNewAccountCmd() *cobra.Command {
 
 			dataDir := getDataDirFromCmd(cmd)
 
-			ks := keystore.NewKeyStore(wallet.GetKeystoreDirPath(dataDir),
-				keystore.StandardScryptN, keystore.StandardScryptP)
-			acc, err := ks.NewAccount(password)
+			acc, err := wallet.NewKeystoreAccount(dataDir, password)
 			if err != nil {
 				fmt.Println(err)
 				os.Exit(1)
 			}
 
-			fmt.Printf("New account created: %s\n", acc.Address.Hex())
+			fmt.Printf("New account created: %s\n", acc.Hex())
 		},
 	}
 
