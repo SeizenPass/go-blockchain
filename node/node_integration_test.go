@@ -15,7 +15,6 @@ import (
 	"time"
 )
 
-//TODO: Change addresses for test
 const testKsMirasAccount = "0xBd5C714b73Dc08B1D1D0A0eE9626635C939e5576"
 const testKsAmiranAccount = "0x933f7d71eB25D3EcB051E3FfBD6415dC3ac30507"
 const testKsMirasFile = "test_miras--Bd5C714b73Dc08B1D1D0A0eE9626635C939e5576"
