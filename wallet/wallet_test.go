@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"github.com/SeizenPass/go-blockchain/database"
 	"github.com/SeizenPass/go-blockchain/fs"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"io/ioutil"
@@ -74,8 +73,6 @@ func TestSignTxWithKeystoreAccount(t *testing.T) {
 		t.Error(err)
 		return
 	}
-
-	spew.Dump(signedTx.Encode())
 
 	ok, err := signedTx.IsAuthentic()
 	if err != nil {
