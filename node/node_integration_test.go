@@ -2,23 +2,37 @@ package node
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/SeizenPass/go-blockchain/database"
 	"github.com/SeizenPass/go-blockchain/fs"
 	"github.com/SeizenPass/go-blockchain/wallet"
+	"github.com/ethereum/go-ethereum/common"
+	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
 
+//TODO: Change addresses for test
+const testKsMirasAccount = "0xBd5C714b73Dc08B1D1D0A0eE9626635C939e5576"
+const testKsAmiranAccount = "0x933f7d71eB25D3EcB051E3FfBD6415dC3ac30507"
+const testKsMirasFile = "test_miras--Bd5C714b73Dc08B1D1D0A0eE9626635C939e5576"
+const testKsAmiranFile = "test_amiran--933f7d71eB25D3EcB051E3FfBD6415dC3ac30507"
+const testKsAccountsPwd = "security123"
+
 func TestNode_Run(t *testing.T) {
-	datadir := getTestDataDirPath()
-	err := fs.RemoveDir(datadir)
+	datadir, err := getTestDataDirPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = fs.RemoveDir(datadir)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	n := New(datadir, "127.0.0.1", 8085, database.NewAccount(wallet.MirasAccount), PeerNode{})
+	n := New(datadir, "127.0.0.1", 8085, database.NewAccount(DefaultMiner), PeerNode{})
 
 	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
 	err = n.Run(ctx)
@@ -28,11 +42,26 @@ func TestNode_Run(t *testing.T) {
 }
 
 func TestNode_Mining(t *testing.T) {
-	miras := database.NewAccount(wallet.MirasAccount)
-	amiran := database.NewAccount(wallet.AmiranAccount)
+	miras := database.NewAccount(testKsMirasAccount)
+	amiran := database.NewAccount(testKsAmiranAccount)
 
-	datadir := getTestDataDirPath()
-	err := fs.RemoveDir(datadir)
+	genesisBalances := make(map[common.Address]uint)
+	genesisBalances[miras] = 1000000
+	genesis := database.Genesis{Balances: genesisBalances}
+	genesisJson, err := json.Marshal(genesis)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dataDir, err := getTestDataDirPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = database.InitDataDirIfNotExists(dataDir, genesisJson)
+	defer fs.RemoveDir(dataDir)
+
+	err = copyKeystoreFilesIntoTestDataDirPath(dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,19 +74,29 @@ func TestNode_Mining(t *testing.T) {
 		true,
 	)
 
-	n := New(datadir, nInfo.IP, nInfo.Port, miras, nInfo)
+	n := New(dataDir, nInfo.IP, nInfo.Port, miras, nInfo)
 	ctx, closeNode := context.WithTimeout(context.Background(), time.Minute*30)
 
 	go func() {
 		time.Sleep(time.Second * miningIntervalSeconds / 3)
 		tx := database.NewTx(miras, amiran, 1, "")
-		_ = n.AddPendingTX(tx, nInfo)
+		signedTx, err := wallet.SignTxWithKeystoreAccount(tx, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		_ = n.AddPendingTX(signedTx, nInfo)
 	}()
 
 	go func() {
 		time.Sleep(time.Second*miningIntervalSeconds + 2)
 		tx := database.NewTx(miras, amiran, 2, "")
-		_ = n.AddPendingTX(tx, nInfo)
+		signedTx, err := wallet.SignTxWithKeystoreAccount(tx, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		_ = n.AddPendingTX(signedTx, nInfo)
 	}()
 
 	go func() {
@@ -82,11 +121,26 @@ func TestNode_Mining(t *testing.T) {
 }
 
 func TestNode_MiningStopsOnNewSyncedBlock(t *testing.T) {
-	miras := database.NewAccount(wallet.MirasAccount)
-	amiran := database.NewAccount(wallet.AmiranAccount)
+	miras := database.NewAccount(testKsMirasAccount)
+	amiran := database.NewAccount(testKsAmiranAccount)
 
-	datadir := getTestDataDirPath()
-	err := fs.RemoveDir(datadir)
+	dataDir, err := getTestDataDirPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	genesisBalances := make(map[common.Address]uint)
+	genesisBalances[miras] = 1000000
+	genesis := database.Genesis{Balances: genesisBalances}
+	genesisJson, err := json.Marshal(genesis)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = database.InitDataDirIfNotExists(dataDir, genesisJson)
+	defer fs.RemoveDir(dataDir)
+
+	err = copyKeystoreFilesIntoTestDataDirPath(dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,12 +153,29 @@ func TestNode_MiningStopsOnNewSyncedBlock(t *testing.T) {
 		true,
 	)
 
-	n := New(datadir, nInfo.IP, nInfo.Port, amiran, nInfo)
+	n := New(dataDir, nInfo.IP, nInfo.Port, amiran, nInfo)
 	ctx, closeNode := context.WithTimeout(context.Background(), time.Minute*30)
 
 	tx1 := database.NewTx(miras, amiran, 1, "")
 	tx2 := database.NewTx(miras, amiran, 2, "")
-	tx2Hash, _ := tx2.Hash()
+
+	signedTx1, err := wallet.SignTxWithKeystoreAccount(tx1, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	signedTx2, err := wallet.SignTxWithKeystoreAccount(tx2, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	tx2Hash, err := signedTx2.Hash()
+	if err != nil {
+		t.Error(err)
+		return
+	}
 
 	//TODO should be corrected to the true block with true nonce
 	/*
@@ -117,7 +188,7 @@ func TestNode_MiningStopsOnNewSyncedBlock(t *testing.T) {
 		        Attempt: '120997454'
 		        Time: 26m52.629146s
 	*/
-	validPreMinedPb := NewPendingBlock(database.Hash{}, 0, miras, []database.Tx{tx1})
+	validPreMinedPb := NewPendingBlock(database.Hash{}, 0, miras, []database.SignedTx{signedTx1})
 	validSyncedBlock, err := Mine(ctx, validPreMinedPb)
 	if err != nil {
 		t.Fatal(err)
@@ -126,12 +197,12 @@ func TestNode_MiningStopsOnNewSyncedBlock(t *testing.T) {
 	go func() {
 		time.Sleep(time.Second * (miningIntervalSeconds - 2))
 
-		err := n.AddPendingTX(tx1, nInfo)
+		err := n.AddPendingTX(signedTx1, nInfo)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		err = n.AddPendingTX(tx2, nInfo)
+		err = n.AddPendingTX(signedTx2, nInfo)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -219,6 +290,51 @@ func TestNode_MiningStopsOnNewSyncedBlock(t *testing.T) {
 	}
 }
 
-func getTestDataDirPath() string {
-	return filepath.Join(os.TempDir(), ".aitu_test")
+func getTestDataDirPath() (string, error) {
+	return ioutil.TempDir(os.TempDir(), "aitu_test")
+}
+
+func copyKeystoreFilesIntoTestDataDirPath(dataDir string) error {
+	mirasSrcKs, err := os.Open(testKsMirasFile)
+	if err != nil {
+		return err
+	}
+	defer mirasSrcKs.Close()
+
+	ksDir := filepath.Join(wallet.GetKeystoreDirPath(dataDir))
+
+	err = os.Mkdir(ksDir, 0777)
+	if err != nil {
+		return err
+	}
+
+	mirasDstKs, err := os.Create(filepath.Join(ksDir, testKsMirasFile))
+	if err != nil {
+		return err
+	}
+	defer mirasDstKs.Close()
+
+	_, err = io.Copy(mirasDstKs, mirasSrcKs)
+	if err != nil {
+		return err
+	}
+
+	amiranSrcKs, err := os.Open(testKsAmiranFile)
+	if err != nil {
+		return err
+	}
+	defer amiranSrcKs.Close()
+
+	amiranDstKs, err := os.Create(filepath.Join(ksDir, testKsAmiranFile))
+	if err != nil {
+		return err
+	}
+	defer amiranDstKs.Close()
+
+	_, err = io.Copy(amiranDstKs, amiranSrcKs)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

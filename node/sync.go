@@ -27,6 +27,10 @@ func (n *Node) doSync() {
 			continue
 		}
 
+		if peer.IP == "" {
+			continue
+		}
+
 		fmt.Printf("Searching for new Peers and their Blocks and Peers: '%s'\n", peer.TcpAddress())
 
 		status, err := queryPeerStatus(peer)
@@ -116,7 +120,7 @@ func (n *Node) syncKnownPeers(status StatusRes) error {
 	return nil
 }
 
-func (n *Node) syncPendingTXs(peer PeerNode, txs []database.Tx) error {
+func (n *Node) syncPendingTXs(peer PeerNode, txs []database.SignedTx) error {
 	for _, tx := range txs {
 		err := n.AddPendingTX(tx, peer)
 		if err != nil {
@@ -133,14 +137,14 @@ func (n *Node) joinKnownPeers(peer PeerNode) error {
 	}
 
 	url := fmt.Sprintf(
-			"http://%s%s?%s=%s&%s=%d",
-			peer.TcpAddress(),
-			endpointAddPeer,
-			endpointAddPeerQueryKeyIP,
-			n.info.IP,
-			endpointAddPeerQueryKeyPort,
-			n.info.Port,
-		)
+		"http://%s%s?%s=%s&%s=%d",
+		peer.TcpAddress(),
+		endpointAddPeer,
+		endpointAddPeerQueryKeyIP,
+		n.info.IP,
+		endpointAddPeerQueryKeyPort,
+		n.info.Port,
+	)
 
 	res, err := http.Get(url)
 	if err != nil {
@@ -188,12 +192,12 @@ func fetchBlocksFromPeer(peer PeerNode, fromBlock database.Hash) ([]database.Blo
 	fmt.Printf("Importing blocks from Peer %s...\n", peer.TcpAddress())
 
 	url := fmt.Sprintf(
-			"http://%s%s?%s=%s",
-			peer.TcpAddress(),
-			endpointSync,
-			endpointSyncQueryKeyFromBlock,
-			fromBlock.Hex(),
-		)
+		"http://%s%s?%s=%s",
+		peer.TcpAddress(),
+		endpointSync,
+		endpointSyncQueryKeyFromBlock,
+		fromBlock.Hex(),
+	)
 
 	res, err := http.Get(url)
 	if err != nil {

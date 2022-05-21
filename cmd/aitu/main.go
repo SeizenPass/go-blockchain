@@ -23,7 +23,6 @@ func main() {
 		},
 	}
 
-	aituCmd.AddCommand(migrateCmd())
 	aituCmd.AddCommand(versionCmd)
 	aituCmd.AddCommand(walletCmd())
 	aituCmd.AddCommand(balancesCmd())

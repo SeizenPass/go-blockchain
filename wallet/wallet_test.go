@@ -4,10 +4,16 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"github.com/SeizenPass/go-blockchain/database"
+	"github.com/SeizenPass/go-blockchain/fs"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"io/ioutil"
 	"testing"
 )
+
+const testKeystoreAccountsPwd = "security123"
 
 func TestSign(t *testing.T) {
 	privKey, err := ecdsa.GenerateKey(crypto.S256(), rand.Reader)
@@ -39,5 +45,83 @@ func TestSign(t *testing.T) {
 
 	if account.Hex() != recoveredAccount.Hex() {
 		t.Fatalf("msg was signed by account %s but signature recovery produced an account %s", account.Hex(), recoveredAccount.Hex())
+	}
+}
+
+func TestSignTxWithKeystoreAccount(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "wallet_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fs.RemoveDir(tmpDir)
+
+	miras, err := NewKeystoreAccount(tmpDir, testKeystoreAccountsPwd)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	amiran, err := NewKeystoreAccount(tmpDir, testKeystoreAccountsPwd)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	tx := database.NewTx(miras, amiran, 100, "")
+
+	signedTx, err := SignTxWithKeystoreAccount(tx, miras, testKeystoreAccountsPwd, GetKeystoreDirPath(tmpDir))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	spew.Dump(signedTx.Encode())
+
+	ok, err := signedTx.IsAuthentic()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if !ok {
+		t.Fatal("the TX was signed by 'from' account and should have been authentic")
+	}
+}
+
+func TestSignForgedTxWithKeystoreAccount(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "wallet_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fs.RemoveDir(tmpDir)
+
+	hacker, err := NewKeystoreAccount(tmpDir, testKeystoreAccountsPwd)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	amiran, err := NewKeystoreAccount(tmpDir, testKeystoreAccountsPwd)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	forgedTx := database.NewTx(amiran, hacker, 100, "")
+
+	signedTx, err := SignTxWithKeystoreAccount(forgedTx, hacker, testKeystoreAccountsPwd, GetKeystoreDirPath(tmpDir))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	ok, err := signedTx.IsAuthentic()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if ok {
+		t.Fatal("the TX 'from' attribute was forged and should have not be authentic")
 	}
 }

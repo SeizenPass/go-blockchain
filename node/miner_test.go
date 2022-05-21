@@ -2,10 +2,14 @@ package node
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/hex"
 	"github.com/SeizenPass/go-blockchain/database"
 	"github.com/SeizenPass/go-blockchain/wallet"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"testing"
 	"time"
 )
@@ -35,8 +39,15 @@ func TestInvalidBlockHash(t *testing.T) {
 }
 
 func TestMine(t *testing.T) {
-	miner := database.NewAccount(wallet.MirasAccount)
-	pendingBlock := createRandomPendingBlock(miner)
+	minerPrivKey, _, miner, err := generateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pendingBlock, err := createRandomPendingBlock(minerPrivKey, miner)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	ctx := context.Background()
 
@@ -60,25 +71,49 @@ func TestMine(t *testing.T) {
 }
 
 func TestMineWithTimeout(t *testing.T) {
-	miner := database.NewAccount(wallet.MirasAccount)
-	pendingBlock := createRandomPendingBlock(miner)
+	minerPrivKey, _, miner, err := generateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pendingBlock, err := createRandomPendingBlock(minerPrivKey, miner)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	ctx, _ := context.WithTimeout(context.Background(), time.Microsecond*100)
 
-	_, err := Mine(ctx, pendingBlock)
+	_, err = Mine(ctx, pendingBlock)
 	if err == nil {
 		t.Fatal(err)
 	}
 }
 
-func createRandomPendingBlock(miner common.Address) PendingBlock {
+func generateKey() (*ecdsa.PrivateKey, ecdsa.PublicKey, common.Address, error) {
+	privKey, err := ecdsa.GenerateKey(crypto.S256(), rand.Reader)
+	if err != nil {
+		return nil, ecdsa.PublicKey{}, common.Address{}, err
+	}
+
+	pubKey := privKey.PublicKey
+	pubKeyBytes := elliptic.Marshal(crypto.S256(), pubKey.X, pubKey.Y)
+	pubKeyBytesHash := crypto.Keccak256(pubKeyBytes[1:])
+
+	account := common.BytesToAddress(pubKeyBytesHash[12:])
+
+	return privKey, pubKey, account, nil
+}
+
+func createRandomPendingBlock(privKey *ecdsa.PrivateKey, acc common.Address) (PendingBlock, error) {
+	tx := database.NewTx(acc, database.NewAccount(testKsMirasAccount), 1, "")
+	signedTx, err := wallet.SignTx(tx, privKey)
+	if err != nil {
+		return PendingBlock{}, err
+	}
 	return NewPendingBlock(
 		database.Hash{},
 		0,
-		miner,
-		[]database.Tx{
-			database.NewTx(database.NewAccount(wallet.MirasAccount),
-				database.NewAccount(wallet.AmiranAccount), 3, ""),
-		},
-	)
+		acc,
+		[]database.SignedTx{signedTx},
+	), nil
 }
