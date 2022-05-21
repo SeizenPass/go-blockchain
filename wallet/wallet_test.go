@@ -66,7 +66,7 @@ func TestSignTxWithKeystoreAccount(t *testing.T) {
 		return
 	}
 
-	tx := database.NewTx(miras, amiran, 100, "")
+	tx := database.NewTx(miras, amiran, 100, 1, "")
 
 	signedTx, err := SignTxWithKeystoreAccount(tx, miras, testKeystoreAccountsPwd, GetKeystoreDirPath(tmpDir))
 	if err != nil {
@@ -104,7 +104,7 @@ func TestSignForgedTxWithKeystoreAccount(t *testing.T) {
 		return
 	}
 
-	forgedTx := database.NewTx(amiran, hacker, 100, "")
+	forgedTx := database.NewTx(amiran, hacker, 100, 2, "")
 
 	signedTx, err := SignTxWithKeystoreAccount(forgedTx, hacker, testKeystoreAccountsPwd, GetKeystoreDirPath(tmpDir))
 	if err != nil {

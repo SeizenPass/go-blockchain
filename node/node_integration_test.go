@@ -41,35 +41,17 @@ func TestNode_Run(t *testing.T) {
 }
 
 func TestNode_Mining(t *testing.T) {
-	miras := database.NewAccount(testKsMirasAccount)
-	amiran := database.NewAccount(testKsAmiranAccount)
-
-	genesisBalances := make(map[common.Address]uint)
-	genesisBalances[miras] = 1000000
-	genesis := database.Genesis{Balances: genesisBalances}
-	genesisJson, err := json.Marshal(genesis)
+	dataDir, miras, amiran, err := setupTestNodeDir()
 	if err != nil {
-		t.Fatal(err)
+		t.Error(err)
 	}
-
-	dataDir, err := getTestDataDirPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = database.InitDataDirIfNotExists(dataDir, genesisJson)
 	defer fs.RemoveDir(dataDir)
-
-	err = copyKeystoreFilesIntoTestDataDirPath(dataDir)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	nInfo := NewPeerNode(
 		"127.0.0.1",
 		8085,
 		false,
-		database.NewAccount(""),
+		amiran,
 		true,
 	)
 
@@ -78,7 +60,7 @@ func TestNode_Mining(t *testing.T) {
 
 	go func() {
 		time.Sleep(time.Second * miningIntervalSeconds / 3)
-		tx := database.NewTx(miras, amiran, 1, "")
+		tx := database.NewTx(miras, amiran, 1, 1, "")
 		signedTx, err := wallet.SignTxWithKeystoreAccount(tx, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
 		if err != nil {
 			t.Error(err)
@@ -89,7 +71,7 @@ func TestNode_Mining(t *testing.T) {
 
 	go func() {
 		time.Sleep(time.Second*miningIntervalSeconds + 2)
-		tx := database.NewTx(miras, amiran, 2, "")
+		tx := database.NewTx(miras, amiran, 2, 2, "")
 		signedTx, err := wallet.SignTxWithKeystoreAccount(tx, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
 		if err != nil {
 			t.Error(err)
@@ -119,44 +101,155 @@ func TestNode_Mining(t *testing.T) {
 	}
 }
 
-func TestNode_MiningStopsOnNewSyncedBlock(t *testing.T) {
-	miras := database.NewAccount(testKsMirasAccount)
-	amiran := database.NewAccount(testKsAmiranAccount)
-
-	dataDir, err := getTestDataDirPath()
+func TestNode_ForgedTx(t *testing.T) {
+	dataDir, miras, amiran, err := setupTestNodeDir()
 	if err != nil {
-		t.Fatal(err)
+		t.Error(err)
 	}
-
-	genesisBalances := make(map[common.Address]uint)
-	genesisBalances[miras] = 1000000
-	genesis := database.Genesis{Balances: genesisBalances}
-	genesisJson, err := json.Marshal(genesis)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = database.InitDataDirIfNotExists(dataDir, genesisJson)
 	defer fs.RemoveDir(dataDir)
 
-	err = copyKeystoreFilesIntoTestDataDirPath(dataDir)
+	n := New(dataDir, "127.0.0.1", 8085, miras, PeerNode{})
+	ctx, closeNode := context.WithTimeout(context.Background(), time.Minute*15)
+	mirasPeerNode := NewPeerNode("127.0.0.1", 8085, false, miras, true)
+
+	txValue := uint(5)
+	txNonce := uint(1)
+	tx := database.NewTx(miras, amiran, txValue, txNonce, "")
+
+	validSignedTx, err := wallet.SignTxWithKeystoreAccount(tx, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
 	if err != nil {
-		t.Fatal(err)
+		t.Error(err)
+		return
 	}
+
+	_ = n.AddPendingTX(validSignedTx, mirasPeerNode)
+
+	go func() {
+		ticker := time.NewTicker(time.Second * (miningIntervalSeconds - 3))
+		wasForgedTxAdded := false
+
+		for {
+			select {
+			case <-ticker.C:
+				if !n.state.LatestBlockHash().IsEmpty() {
+					if wasForgedTxAdded && !n.isMining {
+						closeNode()
+						return
+					}
+
+					if !wasForgedTxAdded {
+						forgedTx := database.NewTx(miras, amiran, txValue, txNonce, "")
+						forgedSignedTx := database.NewSignedTx(forgedTx, validSignedTx.Sig)
+
+						_ = n.AddPendingTX(forgedSignedTx, mirasPeerNode)
+						wasForgedTxAdded = true
+
+						time.Sleep(time.Second * (miningIntervalSeconds + 3))
+					}
+				}
+			}
+		}
+	}()
+
+	_ = n.Run(ctx)
+
+	if n.state.LatestBlock().Header.Number != 0 {
+		t.Fatal("was suppose to mine only one TX. The second TX was forged")
+	}
+
+	if n.state.Balances[amiran] != txValue {
+		t.Fatal("forged tx succeeded")
+	}
+}
+
+func TestNode_ReplayedTx(t *testing.T) {
+	dataDir, miras, amiran, err := setupTestNodeDir()
+	if err != nil {
+		t.Error(err)
+	}
+	defer fs.RemoveDir(dataDir)
+
+	n := New(dataDir, "127.0.0.1", 8085, miras, PeerNode{})
+	ctx, closeNode := context.WithCancel(context.Background())
+	mirasPeerNode := NewPeerNode("127.0.0.1", 8085, false, miras, true)
+	amiranPeerNode := NewPeerNode("127.0.0.1", 8086, false, amiran, true)
+
+	txValue := uint(5)
+	txNonce := uint(1)
+	tx := database.NewTx(miras, amiran, txValue, txNonce, "")
+
+	signedTx, err := wallet.SignTxWithKeystoreAccount(tx, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	_ = n.AddPendingTX(signedTx, mirasPeerNode)
+
+	go func() {
+		ticker := time.NewTicker(time.Second * (miningIntervalSeconds - 3))
+		wasReplayedTxAdded := false
+
+		for {
+			select {
+			case <-ticker.C:
+				if n.state.LatestBlockHash().IsEmpty() {
+					if wasReplayedTxAdded && !n.isMining {
+						closeNode()
+						return
+					}
+
+					if !wasReplayedTxAdded {
+						n.archivedTXs = make(map[string]database.SignedTx)
+
+						_ = n.AddPendingTX(signedTx, amiranPeerNode)
+						wasReplayedTxAdded = true
+
+						time.Sleep(time.Second * (miningIntervalSeconds + 3))
+					}
+				}
+			}
+		}
+	}()
+
+	_ = n.Run(ctx)
+
+	if n.state.Balances[amiran] == tx.Value*2 {
+		t.Errorf("replayed attack was successful :(")
+		return
+	}
+
+	if n.state.Balances[amiran] != txValue {
+		t.Errorf("replayed attack was successful :(")
+		return
+	}
+
+	if n.state.LatestBlock().Header.Number == 1 {
+		t.Errorf("the second block was not suppose to be persisted because it contained a malicious TX")
+		return
+	}
+}
+
+func TestNode_MiningStopsOnNewSyncedBlock(t *testing.T) {
+	dataDir, miras, amiran, err := setupTestNodeDir()
+	if err != nil {
+		t.Error(err)
+	}
+	defer fs.RemoveDir(dataDir)
 
 	nInfo := NewPeerNode(
 		"127.0.0.1",
 		8085,
 		false,
-		database.NewAccount(""),
+		amiran,
 		true,
 	)
 
 	n := New(dataDir, nInfo.IP, nInfo.Port, amiran, nInfo)
 	ctx, closeNode := context.WithTimeout(context.Background(), time.Minute*30)
 
-	tx1 := database.NewTx(miras, amiran, 1, "")
-	tx2 := database.NewTx(miras, amiran, 2, "")
+	tx1 := database.NewTx(miras, amiran, 1, 1, "")
+	tx2 := database.NewTx(miras, amiran, 2, 2, "")
 
 	signedTx1, err := wallet.SignTxWithKeystoreAccount(tx1, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
 	if err != nil {
@@ -336,4 +429,34 @@ func copyKeystoreFilesIntoTestDataDirPath(dataDir string) error {
 	}
 
 	return nil
+}
+
+func setupTestNodeDir() (dataDir string, miras, amiran common.Address, err error) {
+	miras = database.NewAccount(testKsMirasAccount)
+	amiran = database.NewAccount(testKsAmiranAccount)
+
+	dataDir, err = getTestDataDirPath()
+	if err != nil {
+		return "", common.Address{}, common.Address{}, err
+	}
+
+	genesisBalances := make(map[common.Address]uint)
+	genesisBalances[miras] = 1000000
+	genesis := database.Genesis{Balances: genesisBalances}
+	genesisJson, err := json.Marshal(genesis)
+	if err != nil {
+		return "", common.Address{}, common.Address{}, err
+	}
+
+	err = database.InitDataDirIfNotExists(dataDir, genesisJson)
+	if err != nil {
+		return "", common.Address{}, common.Address{}, err
+	}
+
+	err = copyKeystoreFilesIntoTestDataDirPath(dataDir)
+	if err != nil {
+		return "", common.Address{}, common.Address{}, err
+	}
+
+	return dataDir, miras, amiran, nil
 }
