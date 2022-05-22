@@ -91,7 +91,7 @@ func (s *State) AddBlocks(blocks []Block) error {
 }
 
 func (s *State) AddBlock(b Block) (Hash, error) {
-	pendingState := s.copy()
+	pendingState := s.Copy()
 
 	err := applyBlock(b, &pendingState)
 
@@ -153,7 +153,7 @@ func (s *State) Close() error {
 	return s.dbFile.Close()
 }
 
-func (s *State) copy() State {
+func (s *State) Copy() State {
 	c := State{}
 	c.hasGenesisBlock = s.hasGenesisBlock
 	c.latestBlock = s.latestBlock
@@ -209,7 +209,7 @@ func applyTxs(txs []SignedTx, s *State) error {
 	})
 
 	for _, tx := range txs {
-		err := applyTx(tx, s)
+		err := ApplyTx(tx, s)
 		if err != nil {
 			return err
 		}
@@ -217,7 +217,21 @@ func applyTxs(txs []SignedTx, s *State) error {
 	return nil
 }
 
-func applyTx(tx SignedTx, s *State) error {
+func ApplyTx(tx SignedTx, s *State) error {
+	err := ValidateTx(tx, s)
+	if err != nil {
+		return err
+	}
+
+	s.Balances[tx.From] -= tx.Cost()
+	s.Balances[tx.To] += tx.Value
+
+	s.Account2Nonce[tx.From] = tx.Nonce
+
+	return nil
+}
+
+func ValidateTx(tx SignedTx, s *State) error {
 	ok, err := tx.IsAuthentic()
 	if err != nil {
 		return err
@@ -237,7 +251,7 @@ func applyTx(tx SignedTx, s *State) error {
 			tx.From.String(), s.Balances[tx.From], tx.Cost())
 	}
 
-	s.Balances[tx.From] -= tx.Cost()
+	s.Balances[tx.From] -= tx.Value
 	s.Balances[tx.To] += tx.Value
 
 	s.Account2Nonce[tx.From] = tx.Nonce

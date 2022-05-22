@@ -70,14 +70,36 @@ func TestNode_Mining(t *testing.T) {
 	}()
 
 	go func() {
-		time.Sleep(time.Second*miningIntervalSeconds + 2)
+		time.Sleep(time.Second*(miningIntervalSeconds/3) + 1)
+
+		tx := database.NewTx(amiran, miras, 50, 1, "")
+		signedTx, err := wallet.SignTxWithKeystoreAccount(tx, amiran, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
+		if err != nil {
+			t.Error(err)
+			return
+		}
+
+		err = n.AddPendingTX(signedTx, nInfo)
+		t.Log(err)
+		if err == nil {
+			t.Errorf("TX should not be added to Mempool because Amiran doesn't have %d AITU tokens", tx.Value)
+			return
+		}
+	}()
+
+	go func() {
+		time.Sleep(time.Second * (miningIntervalSeconds + 2))
 		tx := database.NewTx(miras, amiran, 2, 2, "")
 		signedTx, err := wallet.SignTxWithKeystoreAccount(tx, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		_ = n.AddPendingTX(signedTx, nInfo)
+		err = n.AddPendingTX(signedTx, nInfo)
+		if err != nil {
+			t.Error(err)
+			return
+		}
 	}()
 
 	go func() {
@@ -97,7 +119,7 @@ func TestNode_Mining(t *testing.T) {
 	_ = n.Run(ctx, true, "")
 
 	if n.state.LatestBlock().Header.Number != 1 {
-		t.Fatal("2 pending TX not mined into 2 under 30m")
+		t.Fatal("2 pending TX not mined into 2 blocks under 30m")
 	}
 }
 
@@ -119,10 +141,20 @@ func TestNode_ForgedTx(t *testing.T) {
 	validSignedTx, err := wallet.SignTxWithKeystoreAccount(tx, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
 	if err != nil {
 		t.Error(err)
+		closeNode()
 		return
 	}
 
-	_ = n.AddPendingTX(validSignedTx, mirasPeerNode)
+	go func() {
+		time.Sleep(time.Second * 1)
+
+		err = n.AddPendingTX(validSignedTx, mirasPeerNode)
+		if err != nil {
+			t.Error(err)
+			closeNode()
+			return
+		}
+	}()
 
 	go func() {
 		ticker := time.NewTicker(time.Second * (miningIntervalSeconds - 3))
@@ -141,7 +173,14 @@ func TestNode_ForgedTx(t *testing.T) {
 						forgedTx := database.NewTx(miras, amiran, txValue, txNonce, "")
 						forgedSignedTx := database.NewSignedTx(forgedTx, validSignedTx.Sig)
 
-						_ = n.AddPendingTX(forgedSignedTx, mirasPeerNode)
+						err = n.AddPendingTX(forgedSignedTx, mirasPeerNode)
+
+						t.Log(err)
+						if err != nil {
+							t.Errorf("adding a forged TX to the Mempool should not be possible")
+							closeNode()
+							return
+						}
 						wasForgedTxAdded = true
 
 						time.Sleep(time.Second * (miningIntervalSeconds + 3))
@@ -181,10 +220,20 @@ func TestNode_ReplayedTx(t *testing.T) {
 	signedTx, err := wallet.SignTxWithKeystoreAccount(tx, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
 	if err != nil {
 		t.Error(err)
+		closeNode()
 		return
 	}
 
-	_ = n.AddPendingTX(signedTx, mirasPeerNode)
+	go func() {
+		time.Sleep(time.Second * 1)
+
+		err = n.AddPendingTX(signedTx, mirasPeerNode)
+		if err != nil {
+			t.Error(err)
+			closeNode()
+			return
+		}
+	}()
 
 	go func() {
 		ticker := time.NewTicker(time.Second * (miningIntervalSeconds - 3))
@@ -202,7 +251,13 @@ func TestNode_ReplayedTx(t *testing.T) {
 					if !wasReplayedTxAdded {
 						n.archivedTXs = make(map[string]database.SignedTx)
 
-						_ = n.AddPendingTX(signedTx, amiranPeerNode)
+						err = n.AddPendingTX(signedTx, amiranPeerNode)
+						t.Log(err)
+						if err != nil {
+							t.Errorf("re-adding a TX to the Mempool should not be possible because of Nonce")
+							closeNode()
+							return
+						}
 						wasReplayedTxAdded = true
 
 						time.Sleep(time.Second * (miningIntervalSeconds + 3))
