@@ -41,7 +41,7 @@ func TestNode_Run(t *testing.T) {
 }
 
 func TestNode_Mining(t *testing.T) {
-	dataDir, miras, amiran, err := setupTestNodeDir()
+	dataDir, miras, amiran, err := setupTestNodeDir(1000000)
 	if err != nil {
 		t.Error(err)
 	}
@@ -102,7 +102,7 @@ func TestNode_Mining(t *testing.T) {
 }
 
 func TestNode_ForgedTx(t *testing.T) {
-	dataDir, miras, amiran, err := setupTestNodeDir()
+	dataDir, miras, amiran, err := setupTestNodeDir(1000000)
 	if err != nil {
 		t.Error(err)
 	}
@@ -163,7 +163,7 @@ func TestNode_ForgedTx(t *testing.T) {
 }
 
 func TestNode_ReplayedTx(t *testing.T) {
-	dataDir, miras, amiran, err := setupTestNodeDir()
+	dataDir, miras, amiran, err := setupTestNodeDir(1000000)
 	if err != nil {
 		t.Error(err)
 	}
@@ -231,7 +231,7 @@ func TestNode_ReplayedTx(t *testing.T) {
 }
 
 func TestNode_MiningStopsOnNewSyncedBlock(t *testing.T) {
-	dataDir, miras, amiran, err := setupTestNodeDir()
+	dataDir, miras, amiran, err := setupTestNodeDir(1000000)
 	if err != nil {
 		t.Error(err)
 	}
@@ -382,6 +382,81 @@ func TestNode_MiningStopsOnNewSyncedBlock(t *testing.T) {
 	}
 }
 
+func TestNode_MiningSpamTransactions(t *testing.T) {
+	mirasBalance := uint(1000)
+	amiranBalance := uint(0)
+	minerBalance := uint(0)
+	minerKey, err := wallet.NewRandomKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	miner := minerKey.Address
+	dataDir, miras, amiran, err := setupTestNodeDir(mirasBalance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fs.RemoveDir(dataDir)
+
+	n := New(dataDir, "127.0.0.1", 8085, miner, PeerNode{})
+	ctx, closeNode := context.WithCancel(context.Background())
+	minerPeerNode := NewPeerNode("127.0.0.1", 8085, false, miner, true)
+
+	txValue := uint(200)
+
+	txCount := uint(4)
+	for i := uint(1); i <= txCount; i++ {
+		time.Sleep(time.Second)
+
+		txNonce := i
+		tx := database.NewTx(miras, amiran, txValue, txNonce, "")
+
+		signedTx, err := wallet.SignTxWithKeystoreAccount(tx, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_ = n.AddPendingTX(signedTx, minerPeerNode)
+	}
+
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+
+		for {
+			select {
+			case <-ticker.C:
+				if !n.state.LatestBlockHash().IsEmpty() {
+					closeNode()
+					return
+				}
+			}
+		}
+	}()
+
+	_ = n.Run(ctx, true, "")
+
+	expectedMirasBalance := mirasBalance - (txCount * txValue) - (txCount * database.TxFee)
+	expectedAmiranBalance := amiranBalance + (txCount * txValue)
+	expectedMinerBalance := minerBalance + database.BlockReward + (txCount * database.TxFee)
+
+	if n.state.Balances[miras] != expectedMirasBalance {
+		t.Errorf("Miras balance is incorrect. Expected: %d. Got: %d", expectedMirasBalance, n.state.Balances[miras])
+		return
+	}
+
+	if n.state.Balances[amiran] != expectedAmiranBalance {
+		t.Errorf("Amiran balance is incorrect. Expected: %d. Got: %d", expectedAmiranBalance, n.state.Balances[amiran])
+		return
+	}
+
+	if n.state.Balances[miner] != expectedMinerBalance {
+		t.Errorf("Miner balance is incorrect. Expected: %d. Got: %d", expectedMinerBalance, n.state.Balances[miner])
+	}
+
+	t.Logf("Miras final balance: %d AITU", n.state.Balances[miras])
+	t.Logf("Amiran final balance: %d AITU", n.state.Balances[amiran])
+	t.Logf("Miner final balance: %d AITU", n.state.Balances[miner])
+}
+
 func getTestDataDirPath() (string, error) {
 	return ioutil.TempDir(os.TempDir(), "aitu_test")
 }
@@ -431,7 +506,7 @@ func copyKeystoreFilesIntoTestDataDirPath(dataDir string) error {
 	return nil
 }
 
-func setupTestNodeDir() (dataDir string, miras, amiran common.Address, err error) {
+func setupTestNodeDir(mirasBalance uint) (dataDir string, miras, amiran common.Address, err error) {
 	miras = database.NewAccount(testKsMirasAccount)
 	amiran = database.NewAccount(testKsAmiranAccount)
 
@@ -441,7 +516,7 @@ func setupTestNodeDir() (dataDir string, miras, amiran common.Address, err error
 	}
 
 	genesisBalances := make(map[common.Address]uint)
-	genesisBalances[miras] = 1000000
+	genesisBalances[miras] = mirasBalance
 	genesis := database.Genesis{Balances: genesisBalances}
 	genesisJson, err := json.Marshal(genesis)
 	if err != nil {
