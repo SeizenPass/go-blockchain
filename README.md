@@ -19,7 +19,7 @@ go install ./cmd/aitu/...
 ## Launching AITU node locally
 
 ```bash
-aitu run --datadir=.
+aitu run --datadir=. --disable-ssl
 ```
 
 ## API Reference
