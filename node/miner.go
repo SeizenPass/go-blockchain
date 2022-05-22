@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/SeizenPass/go-blockchain/database"
-	"github.com/SeizenPass/go-blockchain/fs"
 	"github.com/ethereum/go-ethereum/common"
 	"math/rand"
 	"time"
@@ -59,7 +58,7 @@ func Mine(ctx context.Context, pb PendingBlock, miningDifficulty uint) (database
 		hash = blockHash
 	}
 
-	fmt.Printf("\nMined new Block '%x' using PoW🎉🎉🎉%s:\n", hash, fs.Unicode("\\U1F389"))
+	fmt.Printf("\nMined new Block '%x' using PoW🎉🎉🎉 :\n", hash)
 	fmt.Printf("\tHeight: '%v'\n", block.Header.Number)
 	fmt.Printf("\tNonce: '%v'\n", block.Header.Nonce)
 	fmt.Printf("\tCreated: '%v'\n", block.Header.Time)
