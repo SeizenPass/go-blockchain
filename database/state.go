@@ -162,7 +162,7 @@ func (s *State) ChangeMiningDifficulty(newDifficulty uint) {
 }
 
 func (s *State) IsAIP1Fork() bool {
-	return s.LatestBlock().Header.Number >= s.forkAIP1
+	return s.NextBlockNumber() >= s.forkAIP1
 }
 
 func (s *State) Copy() State {
