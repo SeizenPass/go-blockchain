@@ -14,7 +14,7 @@ go install ./cmd/aitu/...
 | `aitu wallet new-account`      | **REQUIRED**<br/>`--datadir` | Creates a new account with a new set of elliptic-curve Private + Public keys |
 | `aitu wallet pk-print`      | **REQUIRED**<br/>`--keystore` | Unlocks keystore file and prints the Private + Public keys. |
 | `aitu balances list`      | **REQUIRED**<br/>`--datadir` | Lists all balances |
-| `aitu run`      | **REQUIRED**<br/>`--datadir`<br/>Optional<br/>`--ip`<br/>`--miner`<br/>`--port`<br/>`--bootstrap-ip`<br/>`--bootstrap-port`<br/>`--bootstrap-account`| Launches the AITU node and its HTTP API |
+| `aitu run`      | **REQUIRED**<br/>`--datadir`<br/>Optional<br/>`--ip`<br/>`--miner`<br/>`--disable-ssl`<br/>`--port`<br/>`--bootstrap-ip`<br/>`--bootstrap-port`<br/>`--bootstrap-account`| Launches the AITU node and its HTTP API |
 
 ## Launching AITU node locally
 

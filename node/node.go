@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/SeizenPass/go-blockchain/database"
 	"github.com/SeizenPass/go-blockchain/wallet"
+	"github.com/caddyserver/certmagic"
 	"github.com/ethereum/go-ethereum/common"
 	"net/http"
 	"time"
@@ -75,7 +76,7 @@ func NewPeerNode(ip string, port uint64, isBootstrap bool, acc common.Address, c
 	return PeerNode{ip, port, isBootstrap, acc, connected}
 }
 
-func (n *Node) Run(ctx context.Context) error {
+func (n *Node) Run(ctx context.Context, isSSLDisabled bool) error {
 	fmt.Println(fmt.Sprintf("Listening on: %s:%d", n.info.IP, n.info.Port))
 
 	state, err := database.NewStateFromDisk(n.dataDir)
@@ -93,10 +94,15 @@ func (n *Node) Run(ctx context.Context) error {
 	go n.sync(ctx)
 	go n.mine(ctx)
 
+	return n.serveHttp(ctx, isSSLDisabled)
+}
+
+func (n *Node) serveHttp(ctx context.Context, isSSLDisabled bool) error {
+
 	handler := http.NewServeMux()
 
 	handler.HandleFunc("/balances/list", func(w http.ResponseWriter, r *http.Request) {
-		listBalancesHandler(w, r, state)
+		listBalancesHandler(w, r, n.state)
 	})
 
 	handler.HandleFunc("/tx/add", func(w http.ResponseWriter, r *http.Request) {
@@ -115,19 +121,23 @@ func (n *Node) Run(ctx context.Context) error {
 		addPeerHandler(w, r, n)
 	})
 
-	server := &http.Server{Addr: fmt.Sprintf(":%d", n.info.Port), Handler: handler}
+	if isSSLDisabled {
+		server := &http.Server{Addr: fmt.Sprintf(":%d", n.info.Port), Handler: handler}
 
-	go func() {
-		<-ctx.Done()
-		_ = server.Close()
-	}()
+		go func() {
+			<-ctx.Done()
+			_ = server.Close()
+		}()
 
-	err = server.ListenAndServe()
-	if err != http.ErrServerClosed {
-		return err
+		err := server.ListenAndServe()
+		if err != http.ErrServerClosed {
+			return err
+		}
+
+		return nil
+	} else {
+		return certmagic.HTTPS([]string{n.info.IP}, handler)
 	}
-
-	return nil
 }
 
 func (n *Node) LatestBlockHash() database.Hash {
