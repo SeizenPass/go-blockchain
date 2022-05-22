@@ -14,25 +14,27 @@ import (
 	"time"
 )
 
+const defaultTestMiningDifficulty = 2
+
 func TestValidBlockHash(t *testing.T) {
-	hexHash := "000000fa04f8160395c387277f8b2f14837603383d33809a4db586086168edfa"
+	hexHash := "0000fa04f8160395c387277f8b2f14837603383d33809a4db586086168edfa"
 	var hash = database.Hash{}
 
 	hex.Decode(hash[:], []byte(hexHash))
 
-	isValid := database.IsBlockHashValid(hash)
+	isValid := database.IsBlockHashValid(hash, defaultTestMiningDifficulty)
 	if !isValid {
-		t.Fatalf("hash '%s' starting with 6 zeroes is suppose to be valid", hexHash)
+		t.Fatalf("hash '%s' starting with 4 zeroes is suppose to be valid", hexHash)
 	}
 }
 
 func TestInvalidBlockHash(t *testing.T) {
-	hexHash := "000001fa04f8160395c387277f8b2f14837603383d33809a4db586086168edfa"
+	hexHash := "0001fa04f8160395c387277f8b2f14837603383d33809a4db586086168edfa"
 	var hash = database.Hash{}
 
 	hex.Decode(hash[:], []byte(hexHash))
 
-	isValid := database.IsBlockHashValid(hash)
+	isValid := database.IsBlockHashValid(hash, defaultTestMiningDifficulty)
 	if isValid {
 		t.Fatal("hash is not suppose to be valid")
 	}
@@ -51,7 +53,7 @@ func TestMine(t *testing.T) {
 
 	ctx := context.Background()
 
-	minedBlock, err := Mine(ctx, pendingBlock)
+	minedBlock, err := Mine(ctx, pendingBlock, defaultTestMiningDifficulty)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +63,7 @@ func TestMine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !database.IsBlockHashValid(minedBlockHash) {
+	if !database.IsBlockHashValid(minedBlockHash, defaultTestMiningDifficulty) {
 		t.Fatalf("mined block is not valid, it has hash %s\n", minedBlockHash.Hex())
 	}
 
@@ -83,7 +85,7 @@ func TestMineWithTimeout(t *testing.T) {
 
 	ctx, _ := context.WithTimeout(context.Background(), time.Microsecond*100)
 
-	_, err = Mine(ctx, pendingBlock)
+	_, err = Mine(ctx, pendingBlock, defaultTestMiningDifficulty)
 	if err == nil {
 		t.Fatal(err)
 	}
@@ -105,7 +107,7 @@ func generateKey() (*ecdsa.PrivateKey, ecdsa.PublicKey, common.Address, error) {
 }
 
 func createRandomPendingBlock(privKey *ecdsa.PrivateKey, acc common.Address) (PendingBlock, error) {
-	tx := database.NewTx(acc, database.NewAccount(testKsMirasAccount), 1, "")
+	tx := database.NewTx(acc, database.NewAccount(testKsMirasAccount), 1, 1, "")
 	signedTx, err := wallet.SignTx(tx, privKey)
 	if err != nil {
 		return PendingBlock{}, err

@@ -21,9 +21,11 @@ type State struct {
 	latestBlock     Block
 	latestBlockHash Hash
 	hasGenesisBlock bool
+
+	miningDifficulty uint
 }
 
-func NewStateFromDisk(dataDir string) (*State, error) {
+func NewStateFromDisk(dataDir string, miningDifficult uint) (*State, error) {
 	err := InitDataDirIfNotExists(dataDir, []byte(genesisJson))
 	if err != nil {
 		return nil, err
@@ -48,7 +50,8 @@ func NewStateFromDisk(dataDir string) (*State, error) {
 	}
 
 	scanner := bufio.NewScanner(f)
-	state := &State{balances, account2nonce, f, Block{}, Hash{}, false}
+	state := &State{balances, account2nonce, f,
+		Block{}, Hash{}, false, miningDifficult}
 
 	for scanner.Scan() {
 		if err := scanner.Err(); err != nil {
@@ -125,6 +128,7 @@ func (s *State) AddBlock(b Block) (Hash, error) {
 	s.latestBlockHash = blockHash
 	s.latestBlock = b
 	s.hasGenesisBlock = true
+	s.miningDifficulty = pendingState.miningDifficulty
 
 	return blockHash, nil
 }
@@ -149,8 +153,8 @@ func (s *State) GetNextAccountNonce(account common.Address) uint {
 	return s.Account2Nonce[account] + 1
 }
 
-func (s *State) Close() error {
-	return s.dbFile.Close()
+func (s *State) ChangeMiningDifficulty(newDifficulty uint) {
+	s.miningDifficulty = newDifficulty
 }
 
 func (s *State) Copy() State {
@@ -160,6 +164,7 @@ func (s *State) Copy() State {
 	c.latestBlockHash = s.latestBlockHash
 	c.Balances = make(map[common.Address]uint)
 	c.Account2Nonce = make(map[common.Address]uint)
+	c.miningDifficulty = s.miningDifficulty
 
 	for acc, balance := range s.Balances {
 		c.Balances[acc] = balance
@@ -170,6 +175,10 @@ func (s *State) Copy() State {
 	}
 
 	return c
+}
+
+func (s *State) Close() error {
+	return s.dbFile.Close()
 }
 
 func applyBlock(b Block, s *State) error {
@@ -188,7 +197,7 @@ func applyBlock(b Block, s *State) error {
 		return err
 	}
 
-	if !IsBlockHashValid(hash) {
+	if !IsBlockHashValid(hash, s.miningDifficulty) {
 		return fmt.Errorf("invalid block hash %x", hash)
 	}
 

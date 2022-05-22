@@ -38,7 +38,8 @@ func runCmd() *cobra.Command {
 				port = node.DefaultHTTPort
 			}
 
-			n := node.New(getDataDirFromCmd(cmd), ip, port, database.NewAccount(miner), bootstrap)
+			n := node.New(getDataDirFromCmd(cmd), ip, port, database.NewAccount(miner), bootstrap,
+				node.DefaultMiningDifficulty)
 			err := n.Run(context.Background(), isSSLDisabled, sslEmail)
 			if err != nil {
 				fmt.Println(err)

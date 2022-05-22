@@ -29,6 +29,7 @@ const endpointAddPeerQueryKeyPort = "port"
 const endpointAddPeerQueryKeyMiner = "miner"
 
 const miningIntervalSeconds = 10
+const DefaultMiningDifficulty = 3
 
 type PeerNode struct {
 	IP          string         `json:"ip"`
@@ -51,27 +52,29 @@ type Node struct {
 
 	pendingState *database.State
 
-	knownPeers      map[string]PeerNode
-	pendingTXs      map[string]database.SignedTx
-	archivedTXs     map[string]database.SignedTx
-	newSyncedBlocks chan database.Block
-	newPendingTXs   chan database.SignedTx
-	isMining        bool
+	knownPeers       map[string]PeerNode
+	pendingTXs       map[string]database.SignedTx
+	archivedTXs      map[string]database.SignedTx
+	newSyncedBlocks  chan database.Block
+	newPendingTXs    chan database.SignedTx
+	isMining         bool
+	miningDifficulty uint
 }
 
-func New(dataDir string, ip string, port uint64, acc common.Address, bootstrap PeerNode) *Node {
+func New(dataDir string, ip string, port uint64, acc common.Address, bootstrap PeerNode, miningDifficulty uint) *Node {
 	knownPeers := make(map[string]PeerNode)
 	knownPeers[bootstrap.TcpAddress()] = bootstrap
 
 	return &Node{
-		dataDir:         dataDir,
-		info:            NewPeerNode(ip, port, false, acc, true),
-		knownPeers:      knownPeers,
-		pendingTXs:      make(map[string]database.SignedTx),
-		archivedTXs:     make(map[string]database.SignedTx),
-		newSyncedBlocks: make(chan database.Block),
-		newPendingTXs:   make(chan database.SignedTx, 10000),
-		isMining:        false,
+		dataDir:          dataDir,
+		info:             NewPeerNode(ip, port, false, acc, true),
+		knownPeers:       knownPeers,
+		pendingTXs:       make(map[string]database.SignedTx),
+		archivedTXs:      make(map[string]database.SignedTx),
+		newSyncedBlocks:  make(chan database.Block),
+		newPendingTXs:    make(chan database.SignedTx, 10000),
+		isMining:         false,
+		miningDifficulty: miningDifficulty,
 	}
 }
 
@@ -82,7 +85,7 @@ func NewPeerNode(ip string, port uint64, isBootstrap bool, acc common.Address, c
 func (n *Node) Run(ctx context.Context, isSSLDisabled bool, sslEmail string) error {
 	fmt.Println(fmt.Sprintf("Listening on: %s:%d", n.info.IP, n.info.Port))
 
-	state, err := database.NewStateFromDisk(n.dataDir)
+	state, err := database.NewStateFromDisk(n.dataDir, n.miningDifficulty)
 	if err != nil {
 		return err
 	}
@@ -199,7 +202,7 @@ func (n *Node) minePendingTXs(ctx context.Context) error {
 		n.getPendingTXsAsArray(),
 	)
 
-	minedBlock, err := Mine(ctx, blockToMine)
+	minedBlock, err := Mine(ctx, blockToMine, n.miningDifficulty)
 	if err != nil {
 		return err
 	}
@@ -228,6 +231,11 @@ func (n *Node) removeMinedPendingTXs(block database.Block) {
 			delete(n.pendingTXs, txHash.Hex())
 		}
 	}
+}
+
+func (n *Node) ChangeMiningDifficulty(newDifficulty uint) {
+	n.miningDifficulty = newDifficulty
+	n.state.ChangeMiningDifficulty(newDifficulty)
 }
 
 func (n *Node) AddPeer(peer PeerNode) {
