@@ -45,8 +45,11 @@ func (t Tx) IsReward() bool {
 	return t.Data == "reward"
 }
 
-func (t Tx) Cost() uint {
-	return t.Value + t.GasCost()
+func (t Tx) Cost(isAip1Fork bool) uint {
+	if isAip1Fork {
+		return t.Value + t.GasCost()
+	}
+	return t.Value + TxFee
 }
 
 func (t Tx) GasCost() uint {

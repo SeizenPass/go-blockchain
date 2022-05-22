@@ -41,7 +41,7 @@ func TestNode_Run(t *testing.T) {
 }
 
 func TestNode_Mining(t *testing.T) {
-	dataDir, miras, amiran, err := setupTestNodeDir(1000000)
+	dataDir, miras, amiran, err := setupTestNodeDir(1000000, 0)
 	if err != nil {
 		t.Error(err)
 	}
@@ -124,7 +124,7 @@ func TestNode_Mining(t *testing.T) {
 }
 
 func TestNode_ForgedTx(t *testing.T) {
-	dataDir, miras, amiran, err := setupTestNodeDir(1000000)
+	dataDir, miras, amiran, err := setupTestNodeDir(1000000, 0)
 	if err != nil {
 		t.Error(err)
 	}
@@ -202,7 +202,7 @@ func TestNode_ForgedTx(t *testing.T) {
 }
 
 func TestNode_ReplayedTx(t *testing.T) {
-	dataDir, miras, amiran, err := setupTestNodeDir(1000000)
+	dataDir, miras, amiran, err := setupTestNodeDir(1000000, 0)
 	if err != nil {
 		t.Error(err)
 	}
@@ -286,240 +286,301 @@ func TestNode_ReplayedTx(t *testing.T) {
 }
 
 func TestNode_MiningStopsOnNewSyncedBlock(t *testing.T) {
-	dataDir, miras, amiran, err := setupTestNodeDir(1000000)
-	if err != nil {
-		t.Error(err)
-	}
-	defer fs.RemoveDir(dataDir)
-
-	nInfo := NewPeerNode(
-		"127.0.0.1",
-		8085,
-		false,
-		amiran,
-		true,
-	)
-
-	n := New(dataDir, nInfo.IP, nInfo.Port, amiran, nInfo, uint(5))
-	ctx, closeNode := context.WithTimeout(context.Background(), time.Minute*30)
-
-	tx1 := database.NewBaseTx(miras, amiran, 1, 1, "")
-	tx2 := database.NewBaseTx(miras, amiran, 2, 2, "")
-
-	signedTx1, err := wallet.SignTxWithKeystoreAccount(tx1, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
-	if err != nil {
-		t.Error(err)
-		return
+	tc := []struct {
+		name     string
+		ForkAIP1 uint64
+	}{
+		{"Legacy", 5},
+		{"ForkAIP1", 0},
 	}
 
-	signedTx2, err := wallet.SignTxWithKeystoreAccount(tx2, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	for _, tc := range tc {
+		t.Run(tc.name, func(t *testing.T) {
+			amiran := database.NewAccount(testKsAmiranAccount)
+			miras := database.NewAccount(testKsMirasAccount)
 
-	tx2Hash, err := signedTx2.Hash()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	//TODO should be corrected to the true block with true nonce
-	/*
-		Mined new Block '000000b1a1afa8f262badf59a5aef2ee1d35775b6b7320f2dfcc411db4476f4a' using PoW����:
-		        Height: '1'
-		        Nonce: '4028503425'
-		        Created: '1643913265'
-		        Miner: 'miras'
-		        Parent: '0000000000000000000000000000000000000000000000000000000000000000'
-		        Attempt: '120997454'
-		        Time: 26m52.629146s
-	*/
-	validPreMinedPb := NewPendingBlock(database.Hash{}, 0, miras, []database.SignedTx{signedTx1})
-	validSyncedBlock, err := Mine(ctx, validPreMinedPb, defaultTestMiningDifficulty)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	go func() {
-		time.Sleep(time.Second * (miningIntervalSeconds - 2))
-
-		err := n.AddPendingTX(signedTx1, nInfo)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		err = n.AddPendingTX(signedTx2, nInfo)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}()
-
-	go func() {
-		time.Sleep(time.Second * (miningIntervalSeconds + 2))
-		if !n.isMining {
-			t.Fatal("should be mining")
-		}
-
-		n.ChangeMiningDifficulty(defaultTestMiningDifficulty)
-		_, err := n.state.AddBlock(validSyncedBlock)
-		if err != nil {
-			t.Fatal(err)
-		}
-		n.newSyncedBlocks <- validSyncedBlock
-
-		time.Sleep(time.Second)
-		if n.isMining {
-			t.Fatal("synced block should have canceled mining")
-		}
-
-		_, onlyTX2IsPending := n.pendingTXs[tx2Hash.Hex()]
-
-		if len(n.pendingTXs) != 1 && !onlyTX2IsPending {
-			t.Fatal("synced block should have canceled mining of already mined transaction")
-		}
-	}()
-
-	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-
-		for {
-			select {
-			case <-ticker.C:
-				if n.state.LatestBlock().Header.Number == 1 {
-					closeNode()
-					return
-				}
-			}
-		}
-	}()
-
-	go func() {
-		time.Sleep(time.Second * 2)
-
-		startingMirasBalance := n.state.Balances[miras]
-		startingAmiranBalance := n.state.Balances[amiran]
-
-		<-ctx.Done()
-
-		endMirasBalance := n.state.Balances[miras]
-		endAmiranBalance := n.state.Balances[amiran]
-
-		expectedMirasBalance := startingMirasBalance - tx1.Cost() - tx2.Cost() + database.BlockReward + database.TxFee
-		expectedAmiranBalance := startingAmiranBalance + tx1.Value + tx2.Value + database.BlockReward + database.TxFee
-
-		if endMirasBalance != expectedMirasBalance {
-			t.Errorf("Miras expected end balance is %d not %d", expectedMirasBalance, endMirasBalance)
-		}
-
-		if endAmiranBalance != expectedAmiranBalance {
-			t.Errorf("Amiran expected end balance is %d not %d", expectedAmiranBalance, endAmiranBalance)
-		}
-
-		t.Logf("Starting Miras balance: %d", startingMirasBalance)
-		t.Logf("Starting Amiran balance: %d", startingAmiranBalance)
-		t.Logf("Ending Miras balance: %d", endMirasBalance)
-		t.Logf("Ending Amiran balance: %d", endAmiranBalance)
-	}()
-
-	_ = n.Run(ctx, true, "")
-
-	if n.state.LatestBlock().Header.Number != 1 {
-		t.Fatal("was suppose to mine 2 pending TX into 2 valid blocks under 30m")
-	}
-
-	if len(n.pendingTXs) != 0 {
-		t.Fatal("no pending TXs should be left to mine")
-	}
-}
-
-func TestNode_MiningSpamTransactions(t *testing.T) {
-	mirasBalance := uint(1000)
-	amiranBalance := uint(0)
-	minerBalance := uint(0)
-	minerKey, err := wallet.NewRandomKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-	miner := minerKey.Address
-	dataDir, miras, amiran, err := setupTestNodeDir(mirasBalance)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer fs.RemoveDir(dataDir)
-
-	n := New(dataDir, "127.0.0.1", 8085, miner, PeerNode{}, defaultTestMiningDifficulty)
-	ctx, closeNode := context.WithCancel(context.Background())
-	minerPeerNode := NewPeerNode("127.0.0.1", 8085, false, miner, true)
-
-	txValue := uint(200)
-
-	txCount := uint(4)
-	go func() {
-		time.Sleep(time.Second)
-
-		spamTXs := make([]database.SignedTx, txCount)
-
-		now := uint64(time.Now().Unix())
-
-		for i := uint(1); i <= txCount; i++ {
-			time.Sleep(time.Second)
-
-			txNonce := i
-			tx := database.NewBaseTx(miras, amiran, txValue, txNonce, "")
-
-			tx.Time = now - uint64(txCount-i*100)
-
-			signedTx, err := wallet.SignTxWithKeystoreAccount(tx, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
+			dataDir, err := getTestDataDirPath()
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			spamTXs[i-1] = signedTx
-		}
+			genesisBalances := make(map[common.Address]uint)
+			genesisBalances[miras] = 1000000
+			genesis := database.Genesis{Balances: genesisBalances, ForkAIP1: tc.ForkAIP1}
 
-		for _, tx := range spamTXs {
-			_ = n.AddPendingTX(tx, minerPeerNode)
-		}
-	}()
-
-	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-
-		for {
-			select {
-			case <-ticker.C:
-				if !n.state.LatestBlockHash().IsEmpty() {
-					closeNode()
-					return
-				}
+			genesisJson, err := json.Marshal(genesis)
+			if err != nil {
+				t.Fatal(err)
 			}
-		}
-	}()
 
-	_ = n.Run(ctx, true, "")
+			err = database.InitDataDirIfNotExists(dataDir, genesisJson)
+			defer fs.RemoveDir(dataDir)
 
-	expectedMirasBalance := mirasBalance - (txCount * txValue) - (txCount * database.TxFee)
-	expectedAmiranBalance := amiranBalance + (txCount * txValue)
-	expectedMinerBalance := minerBalance + database.BlockReward + (txCount * database.TxFee)
+			err = copyKeystoreFilesIntoTestDataDirPath(dataDir)
 
-	if n.state.Balances[miras] != expectedMirasBalance {
-		t.Errorf("Miras balance is incorrect. Expected: %d. Got: %d", expectedMirasBalance, n.state.Balances[miras])
-		return
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			nInfo := NewPeerNode(
+				"127.0.0.1",
+				8085,
+				false,
+				database.NewAccount(""),
+				true,
+			)
+
+			n := New(dataDir, nInfo.IP, nInfo.Port, amiran, nInfo, uint(5))
+
+			ctx, closeNode := context.WithTimeout(context.Background(), time.Minute*30)
+
+			tx1 := database.NewBaseTx(miras, amiran, 1, 1, "")
+			tx2 := database.NewBaseTx(miras, amiran, 2, 2, "")
+
+			signedTx1, err := wallet.SignTxWithKeystoreAccount(tx1, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
+			if err != nil {
+				t.Error(err)
+				return
+			}
+
+			signedTx2, err := wallet.SignTxWithKeystoreAccount(tx2, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			tx2Hash, err := signedTx2.Hash()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+
+			validPreMinedPb := NewPendingBlock(database.Hash{}, 0, miras, []database.SignedTx{signedTx1})
+			validSyncedBlock, err := Mine(ctx, validPreMinedPb, defaultTestMiningDifficulty)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			go func() {
+				time.Sleep(time.Second * (miningIntervalSeconds - 2))
+
+				err := n.AddPendingTX(signedTx1, nInfo)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				err = n.AddPendingTX(signedTx2, nInfo)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}()
+
+			go func() {
+				time.Sleep(time.Second * (miningIntervalSeconds + 2))
+				if !n.isMining {
+					t.Fatal("should be mining")
+				}
+
+				n.ChangeMiningDifficulty(defaultTestMiningDifficulty)
+				_, err := n.state.AddBlock(validSyncedBlock)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				n.newSyncedBlocks <- validSyncedBlock
+
+				time.Sleep(time.Second)
+				if n.isMining {
+					t.Fatal("synced block should have canceled mining")
+				}
+
+				_, onlyTX2IsPending := n.pendingTXs[tx2Hash.Hex()]
+
+				if len(n.pendingTXs) != 1 && !onlyTX2IsPending {
+					t.Fatal("synced block should have canceled mining of already mined TX")
+				}
+			}()
+
+			go func() {
+				ticker := time.NewTicker(time.Second * 10)
+
+				for {
+					select {
+					case <-ticker.C:
+						if n.state.LatestBlock().Header.Number == 1 {
+							closeNode()
+							return
+						}
+					}
+				}
+			}()
+
+			go func() {
+				time.Sleep(time.Second * 2)
+
+				startingMirasBalance := n.state.Balances[miras]
+				startingAmiranBalance := n.state.Balances[amiran]
+
+				<-ctx.Done()
+
+				endMirasBalance := n.state.Balances[miras]
+				endAmiranBalance := n.state.Balances[amiran]
+
+				var expectedEndMirasBalance uint
+				var expectedEndAmiranBalance uint
+
+				if n.state.IsAIP1Fork() {
+					expectedEndMirasBalance = startingMirasBalance - tx1.Cost(true) - tx2.Cost(true) +
+						database.BlockReward + tx1.GasCost()
+					expectedEndAmiranBalance = startingAmiranBalance + tx1.Value + tx2.Value + database.BlockReward +
+						tx2.GasCost()
+				} else {
+					expectedEndMirasBalance = startingMirasBalance - tx1.Cost(false) - tx2.Cost(false) +
+						database.BlockReward + database.TxFee
+					expectedEndAmiranBalance = startingAmiranBalance + tx1.Value + tx2.Value + database.BlockReward +
+						database.TxFee
+				}
+
+				if endMirasBalance != expectedEndMirasBalance {
+					t.Errorf("Miras expected end balance is %d not %d", expectedEndMirasBalance, endMirasBalance)
+				}
+
+				if endAmiranBalance != expectedEndAmiranBalance {
+					t.Errorf("Amiran expected end balance is %d not %d", expectedEndAmiranBalance, endAmiranBalance)
+				}
+
+				t.Logf("Starting Miras balance: %d", startingMirasBalance)
+				t.Logf("Starting Amiran balance: %d", startingAmiranBalance)
+				t.Logf("Ending Miras balance: %d", endMirasBalance)
+				t.Logf("Ending Amiran balance: %d", endAmiranBalance)
+			}()
+
+			_ = n.Run(ctx, true, "")
+
+			if n.state.LatestBlock().Header.Number != 1 {
+				t.Fatal("was suppose to mine 2 pending TX into 2 valid blocks under 30m")
+			}
+
+			if len(n.pendingTXs) != 0 {
+				t.Fatal("no pending TXs should be left to mine")
+			}
+		})
+	}
+}
+
+func TestNode_MiningSpamTransactions(t *testing.T) {
+	tc := []struct {
+		name     string
+		ForkAIP1 uint64
+	}{
+		{"Legacy", 5},
+		{"ForkAIP1", 0},
 	}
 
-	if n.state.Balances[amiran] != expectedAmiranBalance {
-		t.Errorf("Amiran balance is incorrect. Expected: %d. Got: %d", expectedAmiranBalance, n.state.Balances[amiran])
-		return
-	}
+	for _, tc := range tc {
+		t.Run(tc.name, func(t *testing.T) {
+			mirasBalance := uint(1000)
+			amiranBalance := uint(0)
+			minerBalance := uint(0)
+			minerKey, err := wallet.NewRandomKey()
+			if err != nil {
+				t.Fatal(err)
+			}
+			miner := minerKey.Address
+			dataDir, miras, amiran, err := setupTestNodeDir(mirasBalance, tc.ForkAIP1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer fs.RemoveDir(dataDir)
 
-	if n.state.Balances[miner] != expectedMinerBalance {
-		t.Errorf("Miner balance is incorrect. Expected: %d. Got: %d", expectedMinerBalance, n.state.Balances[miner])
-	}
+			n := New(dataDir, "127.0.0.1", 8085, miner, PeerNode{}, defaultTestMiningDifficulty)
+			ctx, closeNode := context.WithCancel(context.Background())
+			minerPeerNode := NewPeerNode("127.0.0.1", 8085, false, miner, true)
 
-	t.Logf("Miras final balance: %d AITU", n.state.Balances[miras])
-	t.Logf("Amiran final balance: %d AITU", n.state.Balances[amiran])
-	t.Logf("Miner final balance: %d AITU", n.state.Balances[miner])
+			txValue := uint(200)
+			txCount := uint(4)
+			spamTXs := make([]database.SignedTx, txCount)
+
+			go func() {
+				time.Sleep(time.Second)
+
+				now := uint64(time.Now().Unix())
+
+				for i := uint(1); i <= txCount; i++ {
+					time.Sleep(time.Second)
+
+					txNonce := i
+					tx := database.NewBaseTx(miras, amiran, txValue, txNonce, "")
+
+					tx.Time = now - uint64(txCount-i*100)
+
+					signedTx, err := wallet.SignTxWithKeystoreAccount(tx, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
+					if err != nil {
+						t.Fatal(err)
+					}
+
+					spamTXs[i-1] = signedTx
+				}
+
+				for _, tx := range spamTXs {
+					_ = n.AddPendingTX(tx, minerPeerNode)
+				}
+			}()
+
+			go func() {
+				ticker := time.NewTicker(10 * time.Second)
+
+				for {
+					select {
+					case <-ticker.C:
+						if !n.state.LatestBlockHash().IsEmpty() {
+							closeNode()
+							return
+						}
+					}
+				}
+			}()
+
+			_ = n.Run(ctx, true, "")
+
+			var expectedMirasBalance uint
+			var expectedAmiranBalance uint
+			var expectedMinerBalance uint
+
+			if n.state.IsAIP1Fork() {
+				expectedMirasBalance = mirasBalance
+				expectedMinerBalance = minerBalance + database.BlockReward
+
+				for _, tx := range spamTXs {
+					expectedMirasBalance -= tx.Cost(true)
+					expectedMinerBalance += tx.GasCost()
+				}
+
+				expectedAmiranBalance = amiranBalance + (txCount * txValue)
+			} else {
+				expectedMirasBalance = mirasBalance - (txCount * txValue) - (txCount * database.TxFee)
+				expectedAmiranBalance = amiranBalance + (txCount * txValue)
+				expectedMinerBalance = minerBalance + database.BlockReward + (txCount * database.TxFee)
+			}
+
+			if n.state.Balances[miras] != expectedMirasBalance {
+				t.Errorf("Miras balance is incorrect. Expected: %d. Got: %d", expectedMirasBalance, n.state.Balances[miras])
+				return
+			}
+
+			if n.state.Balances[amiran] != expectedAmiranBalance {
+				t.Errorf("Amiran balance is incorrect. Expected: %d. Got: %d", expectedAmiranBalance, n.state.Balances[amiran])
+				return
+			}
+
+			if n.state.Balances[miner] != expectedMinerBalance {
+				t.Errorf("Miner balance is incorrect. Expected: %d. Got: %d", expectedMinerBalance, n.state.Balances[miner])
+			}
+
+			t.Logf("Miras final balance: %d AITU", n.state.Balances[miras])
+			t.Logf("Amiran final balance: %d AITU", n.state.Balances[amiran])
+			t.Logf("Miner final balance: %d AITU", n.state.Balances[miner])
+		})
+	}
 }
 
 func getTestDataDirPath() (string, error) {
@@ -571,7 +632,7 @@ func copyKeystoreFilesIntoTestDataDirPath(dataDir string) error {
 	return nil
 }
 
-func setupTestNodeDir(mirasBalance uint) (dataDir string, miras, amiran common.Address, err error) {
+func setupTestNodeDir(mirasBalance uint, forkAip1 uint64) (dataDir string, miras, amiran common.Address, err error) {
 	miras = database.NewAccount(testKsMirasAccount)
 	amiran = database.NewAccount(testKsAmiranAccount)
 
@@ -582,7 +643,7 @@ func setupTestNodeDir(mirasBalance uint) (dataDir string, miras, amiran common.A
 
 	genesisBalances := make(map[common.Address]uint)
 	genesisBalances[miras] = mirasBalance
-	genesis := database.Genesis{Balances: genesisBalances}
+	genesis := database.Genesis{Balances: genesisBalances, ForkAIP1: forkAip1}
 	genesisJson, err := json.Marshal(genesis)
 	if err != nil {
 		return "", common.Address{}, common.Address{}, err

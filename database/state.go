@@ -26,7 +26,7 @@ type State struct {
 
 	miningDifficulty uint
 
-	ForkAIP1 uint64
+	forkAIP1 uint64
 }
 
 func NewStateFromDisk(dataDir string, miningDifficult uint) (*State, error) {
@@ -162,7 +162,7 @@ func (s *State) ChangeMiningDifficulty(newDifficulty uint) {
 }
 
 func (s *State) IsAIP1Fork() bool {
-	return s.LatestBlock().Header.Number >= s.ForkAIP1
+	return s.LatestBlock().Header.Number >= s.forkAIP1
 }
 
 func (s *State) Copy() State {
@@ -173,6 +173,7 @@ func (s *State) Copy() State {
 	c.Balances = make(map[common.Address]uint)
 	c.Account2Nonce = make(map[common.Address]uint)
 	c.miningDifficulty = s.miningDifficulty
+	c.forkAIP1 = s.forkAIP1
 
 	for acc, balance := range s.Balances {
 		c.Balances[acc] = balance
@@ -215,7 +216,11 @@ func applyBlock(b Block, s *State) error {
 	}
 
 	s.Balances[b.Header.Miner] += BlockReward
-	s.Balances[b.Header.Miner] += b.GasReward()
+	if s.IsAIP1Fork() {
+		s.Balances[b.Header.Miner] += b.GasReward()
+	} else {
+		s.Balances[b.Header.Miner] += uint(len(b.TXs)) * TxFee
+	}
 
 	return nil
 }
@@ -240,7 +245,7 @@ func ApplyTx(tx SignedTx, s *State) error {
 		return err
 	}
 
-	s.Balances[tx.From] -= tx.Cost()
+	s.Balances[tx.From] -= tx.Cost(s.IsAIP1Fork())
 	s.Balances[tx.To] += tx.Value
 
 	s.Account2Nonce[tx.From] = tx.Nonce
@@ -263,9 +268,15 @@ func ValidateTx(tx SignedTx, s *State) error {
 		return fmt.Errorf("wrong TX. Sender '%s' next nonce must be '%d', not '%d'", tx.From.String(), expectedNonce, tx.Nonce)
 	}
 
-	if tx.Cost() > s.Balances[tx.From] {
+	if s.IsAIP1Fork() {
+		if tx.Gas != TxGas {
+			return fmt.Errorf("insufficient TX gas %v. required: %v", tx.Gas, TxGas)
+		}
+	}
+
+	if tx.Cost(s.IsAIP1Fork()) > s.Balances[tx.From] {
 		return fmt.Errorf("wrong TX. Sender '%s' balance is %d AITU. Tx cost is %d AITU",
-			tx.From.String(), s.Balances[tx.From], tx.Cost())
+			tx.From.String(), s.Balances[tx.From], tx.Cost(s.IsAIP1Fork()))
 	}
 
 	return nil
