@@ -251,10 +251,5 @@ func ValidateTx(tx SignedTx, s *State) error {
 			tx.From.String(), s.Balances[tx.From], tx.Cost())
 	}
 
-	s.Balances[tx.From] -= tx.Value
-	s.Balances[tx.To] += tx.Value
-
-	s.Account2Nonce[tx.From] = tx.Nonce
-
 	return nil
 }
