@@ -458,6 +458,8 @@ func TestNode_MiningSpamTransactions(t *testing.T) {
 	go func() {
 		time.Sleep(time.Second)
 
+		spamTXs := make([]database.SignedTx, txCount)
+
 		now := uint64(time.Now().Unix())
 
 		for i := uint(1); i <= txCount; i++ {
@@ -473,7 +475,11 @@ func TestNode_MiningSpamTransactions(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			_ = n.AddPendingTX(signedTx, minerPeerNode)
+			spamTXs[i-1] = signedTx
+		}
+
+		for _, tx := range spamTXs {
+			_ = n.AddPendingTX(tx, minerPeerNode)
 		}
 	}()
 
