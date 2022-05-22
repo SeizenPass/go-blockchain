@@ -458,11 +458,15 @@ func TestNode_MiningSpamTransactions(t *testing.T) {
 	go func() {
 		time.Sleep(time.Second)
 
+		now := uint64(time.Now().Unix())
+
 		for i := uint(1); i <= txCount; i++ {
 			time.Sleep(time.Second)
 
 			txNonce := i
 			tx := database.NewTx(miras, amiran, txValue, txNonce, "")
+
+			tx.Time = now - uint64(txCount-i*100)
 
 			signedTx, err := wallet.SignTxWithKeystoreAccount(tx, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
 			if err != nil {
