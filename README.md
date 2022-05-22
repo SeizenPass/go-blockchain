@@ -41,6 +41,8 @@ POST /tx/add
 | `from_pwd` | `string` | **Required**. Password of the account from whom coins will be sent |
 | `to` | `string` | **Required**. Address(0x...) to which coins are sent |
 | `value` | `uint` | **Required**. Number of coins sent |
+| `gas` | `uint` | **Required from AIP1**. Number of gas units |
+| `gasPrice` | `uint` | **Required from AIP1**. The price of single gas unit |
 
 #### Get node status
 
