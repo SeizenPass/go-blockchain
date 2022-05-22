@@ -459,19 +459,23 @@ func TestNode_MiningSpamTransactions(t *testing.T) {
 	txValue := uint(200)
 
 	txCount := uint(4)
-	for i := uint(1); i <= txCount; i++ {
+	go func() {
 		time.Sleep(time.Second)
 
-		txNonce := i
-		tx := database.NewTx(miras, amiran, txValue, txNonce, "")
+		for i := uint(1); i <= txCount; i++ {
+			time.Sleep(time.Second)
 
-		signedTx, err := wallet.SignTxWithKeystoreAccount(tx, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
-		if err != nil {
-			t.Fatal(err)
+			txNonce := i
+			tx := database.NewTx(miras, amiran, txValue, txNonce, "")
+
+			signedTx, err := wallet.SignTxWithKeystoreAccount(tx, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_ = n.AddPendingTX(signedTx, minerPeerNode)
 		}
-
-		_ = n.AddPendingTX(signedTx, minerPeerNode)
-	}
+	}()
 
 	go func() {
 		ticker := time.NewTicker(10 * time.Second)
