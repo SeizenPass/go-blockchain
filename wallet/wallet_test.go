@@ -4,12 +4,14 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"github.com/SeizenPass/go-blockchain/database"
 	"github.com/SeizenPass/go-blockchain/fs"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/stretchr/testify/require"
 	"io/ioutil"
 	"math/big"
 	"testing"
@@ -109,8 +111,24 @@ func TestSignTxWithKeystoreAccount(t *testing.T) {
 	}
 
 	if !ok {
-		t.Fatal("the TX was signed by 'from' account and should have been authentic")
+		t.Error("the TX was signed by 'from' account and should have been authentic")
+		return
 	}
+
+	signedTxJson, err := json.Marshal(signedTx)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	var signedTxUnmarshaled database.SignedTx
+	err = json.Unmarshal(signedTxJson, &signedTxUnmarshaled)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	require.Equal(t, signedTx, signedTxUnmarshaled)
 }
 
 func TestSignForgedTxWithKeystoreAccount(t *testing.T) {
