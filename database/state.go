@@ -10,6 +10,8 @@ import (
 	"sort"
 )
 
+const TxGas = 21
+const TxGasPriceDefault = 1
 const TxFee = uint(50)
 
 type State struct {
@@ -23,6 +25,8 @@ type State struct {
 	hasGenesisBlock bool
 
 	miningDifficulty uint
+
+	ForkAIP1 uint64
 }
 
 func NewStateFromDisk(dataDir string, miningDifficult uint) (*State, error) {
@@ -51,7 +55,7 @@ func NewStateFromDisk(dataDir string, miningDifficult uint) (*State, error) {
 
 	scanner := bufio.NewScanner(f)
 	state := &State{balances, account2nonce, f,
-		Block{}, Hash{}, false, miningDifficult}
+		Block{}, Hash{}, false, miningDifficult, gen.ForkAIP1}
 
 	for scanner.Scan() {
 		if err := scanner.Err(); err != nil {
@@ -157,6 +161,10 @@ func (s *State) ChangeMiningDifficulty(newDifficulty uint) {
 	s.miningDifficulty = newDifficulty
 }
 
+func (s *State) IsAIP1Fork() bool {
+	return s.LatestBlock().Header.Number >= s.ForkAIP1
+}
+
 func (s *State) Copy() State {
 	c := State{}
 	c.hasGenesisBlock = s.hasGenesisBlock
@@ -207,7 +215,7 @@ func applyBlock(b Block, s *State) error {
 	}
 
 	s.Balances[b.Header.Miner] += BlockReward
-	s.Balances[b.Header.Miner] += uint(len(b.TXs)) * TxFee
+	s.Balances[b.Header.Miner] += b.GasReward()
 
 	return nil
 }

@@ -60,7 +60,7 @@ func TestNode_Mining(t *testing.T) {
 
 	go func() {
 		time.Sleep(time.Second * miningIntervalSeconds / 3)
-		tx := database.NewTx(miras, amiran, 1, 1, "")
+		tx := database.NewBaseTx(miras, amiran, 1, 1, "")
 		signedTx, err := wallet.SignTxWithKeystoreAccount(tx, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
 		if err != nil {
 			t.Error(err)
@@ -72,7 +72,7 @@ func TestNode_Mining(t *testing.T) {
 	go func() {
 		time.Sleep(time.Second*(miningIntervalSeconds/3) + 1)
 
-		tx := database.NewTx(amiran, miras, 50, 1, "")
+		tx := database.NewBaseTx(amiran, miras, 50, 1, "")
 		signedTx, err := wallet.SignTxWithKeystoreAccount(tx, amiran, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
 		if err != nil {
 			t.Error(err)
@@ -89,7 +89,7 @@ func TestNode_Mining(t *testing.T) {
 
 	go func() {
 		time.Sleep(time.Second * (miningIntervalSeconds + 2))
-		tx := database.NewTx(miras, amiran, 2, 2, "")
+		tx := database.NewBaseTx(miras, amiran, 2, 2, "")
 		signedTx, err := wallet.SignTxWithKeystoreAccount(tx, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
 		if err != nil {
 			t.Error(err)
@@ -136,7 +136,7 @@ func TestNode_ForgedTx(t *testing.T) {
 
 	txValue := uint(5)
 	txNonce := uint(1)
-	tx := database.NewTx(miras, amiran, txValue, txNonce, "")
+	tx := database.NewBaseTx(miras, amiran, txValue, txNonce, "")
 
 	validSignedTx, err := wallet.SignTxWithKeystoreAccount(tx, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
 	if err != nil {
@@ -170,7 +170,7 @@ func TestNode_ForgedTx(t *testing.T) {
 					}
 
 					if !wasForgedTxAdded {
-						forgedTx := database.NewTx(miras, amiran, txValue, txNonce, "")
+						forgedTx := database.NewBaseTx(miras, amiran, txValue, txNonce, "")
 						forgedSignedTx := database.NewSignedTx(forgedTx, validSignedTx.Sig)
 
 						err = n.AddPendingTX(forgedSignedTx, mirasPeerNode)
@@ -215,7 +215,7 @@ func TestNode_ReplayedTx(t *testing.T) {
 
 	txValue := uint(5)
 	txNonce := uint(1)
-	tx := database.NewTx(miras, amiran, txValue, txNonce, "")
+	tx := database.NewBaseTx(miras, amiran, txValue, txNonce, "")
 
 	signedTx, err := wallet.SignTxWithKeystoreAccount(tx, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
 	if err != nil {
@@ -303,8 +303,8 @@ func TestNode_MiningStopsOnNewSyncedBlock(t *testing.T) {
 	n := New(dataDir, nInfo.IP, nInfo.Port, amiran, nInfo, uint(5))
 	ctx, closeNode := context.WithTimeout(context.Background(), time.Minute*30)
 
-	tx1 := database.NewTx(miras, amiran, 1, 1, "")
-	tx2 := database.NewTx(miras, amiran, 2, 2, "")
+	tx1 := database.NewBaseTx(miras, amiran, 1, 1, "")
+	tx2 := database.NewBaseTx(miras, amiran, 2, 2, "")
 
 	signedTx1, err := wallet.SignTxWithKeystoreAccount(tx1, miras, testKsAccountsPwd, wallet.GetKeystoreDirPath(dataDir))
 	if err != nil {
@@ -466,7 +466,7 @@ func TestNode_MiningSpamTransactions(t *testing.T) {
 			time.Sleep(time.Second)
 
 			txNonce := i
-			tx := database.NewTx(miras, amiran, txValue, txNonce, "")
+			tx := database.NewBaseTx(miras, amiran, txValue, txNonce, "")
 
 			tx.Time = now - uint64(txCount-i*100)
 

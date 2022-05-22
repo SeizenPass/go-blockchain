@@ -14,12 +14,15 @@ var genesisJson = `
 		"0x77a13F4cf2cE723f0794F37eeC7635Dd65AE2736": 1000000,
 		"0x9Fd598035Ec0DD0909c054E855272b56F2BeC5C8": 1000000,
 		"0x058DF0c85de392cc5bef6c749FE6DD8881a2CA44": 1000000
-	  }
+	  },
+	  "fork_aip_1": 5
 	}
 `
 
 type Genesis struct {
 	Balances map[common.Address]uint `json:"balances"`
+
+	ForkAIP1 uint64 `json:"fork_aip_1"`
 }
 
 func loadGenesis(path string) (Genesis, error) {

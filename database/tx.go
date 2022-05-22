@@ -14,12 +14,14 @@ func NewAccount(value string) common.Address {
 }
 
 type Tx struct {
-	From  common.Address `json:"from"`
-	To    common.Address `json:"to"`
-	Value uint           `json:"value"`
-	Nonce uint           `json:"nonce"`
-	Data  string         `json:"data"`
-	Time  uint64         `json:"time"`
+	From     common.Address `json:"from"`
+	To       common.Address `json:"to"`
+	Gas      uint           `json:"gas"`
+	GasPrice uint           `json:"gas_price"`
+	Value    uint           `json:"value"`
+	Nonce    uint           `json:"nonce"`
+	Data     string         `json:"data"`
+	Time     uint64         `json:"time"`
 }
 
 type SignedTx struct {
@@ -27,8 +29,12 @@ type SignedTx struct {
 	Sig []byte `json:"signature"`
 }
 
-func NewTx(from common.Address, to common.Address, value, nonce uint, data string) Tx {
-	return Tx{from, to, value, nonce, data, uint64(time.Now().Unix())}
+func NewTx(from common.Address, to common.Address, gas, gasPrice, value, nonce uint, data string) Tx {
+	return Tx{from, to, gas, gasPrice, value, nonce, data, uint64(time.Now().Unix())}
+}
+
+func NewBaseTx(from, to common.Address, value, nonce uint, data string) Tx {
+	return NewTx(from, to, TxGas, TxGasPriceDefault, value, nonce, data)
 }
 
 func NewSignedTx(tx Tx, sig []byte) SignedTx {
@@ -40,7 +46,11 @@ func (t Tx) IsReward() bool {
 }
 
 func (t Tx) Cost() uint {
-	return t.Value + TxFee
+	return t.Value + t.GasCost()
+}
+
+func (t Tx) GasCost() uint {
+	return t.Gas * t.GasPrice
 }
 
 func (t Tx) Hash() (Hash, error) {
