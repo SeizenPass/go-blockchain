@@ -2,8 +2,7 @@ import React, { Component } from "react";
 import { Table, Label } from "semantic-ui-react";
 import axios from "axios";
 
-const apiKey = `PKHCZSIUU6QYQ6T32IG6RNWRVHI7T872RG`;
-const endpoint = `https://api.etherscan.io/api`;
+const endpoint = `http://localhost:8080`;
 
 class LatestTxs extends Component {
   constructor(props) {
@@ -19,42 +18,47 @@ class LatestTxs extends Component {
 
   getTxs = async () => {
     const { blockNo } = this.props;
-
-    // get the block transaction
-    const blockDetail = await axios.get(
-      endpoint +
-        `?module=proxy&action=eth_getBlockByNumber&tag=${blockNo}&boolean=true&apikey=${apiKey}`
-    );
-
-    const { transactions } = blockDetail.data.result;
-
-    let txsDetails = [];
-
-    // check if there is any transaction
-    if (transactions) {
-      for (let i = 0; i < 5; i = i + 1) {
-        const tx = transactions[i];
-        txsDetails.push(
-          <Table.Row key={i}>
-            <Table.Cell>
-              <Label color="blue">Tx</Label> {tx.hash}
-            </Table.Cell>
-            <Table.Cell>
-              From {tx.from} <br></br>
-              To {tx.to}
-            </Table.Cell>
-            <Table.Cell>
-              {" "}
-              <Label color="blue">Eth</Label> {parseInt(tx.value) / 10 ** 18}
-            </Table.Cell>
-          </Table.Row>
+    if (blockNo) {
+      console.log(blockNo)
+      // get the block transaction
+      let txsDetails = [];
+      for (let j = 0; j < 10; j = j + 1) {
+        const blockDetail = await axios.get(
+            endpoint +
+            `/block/${(blockNo-j)}`
         );
+
+        const { transactions } = blockDetail.data.block.payload;
+        // check if there is any transaction
+        if (blockDetail.data.block.payload) {
+          for (let i = 0; i < blockDetail.data.block.payload.length; i = i + 1) {
+            const tx = blockDetail.data.block.payload[i];
+            console.log(tx)
+            txsDetails.push(
+                <Table.Row key={i}>
+                  <Table.Cell>
+                    <Label color="blue">Tx</Label> {tx.signature}
+                  </Table.Cell>
+                  <Table.Cell>
+                    From {tx.from} <br></br>
+                    To {tx.to}
+                  </Table.Cell>
+                  <Table.Cell>
+                    {" "}
+                    <Label color="blue">AITU</Label> {tx.value}
+                  </Table.Cell>
+                </Table.Row>
+            );
+          }
+        }
+
+        this.setState({
+          transactions: txsDetails,
+        });
       }
+
     }
 
-    this.setState({
-      transactions: txsDetails,
-    });
   };
 
   render() {
@@ -68,7 +72,6 @@ class LatestTxs extends Component {
               </Table.Cell>
             </Table.Row>
           </Table.Header>
-
           <Table.Body>{this.state.transactions}</Table.Body>
         </Table>
       </div>

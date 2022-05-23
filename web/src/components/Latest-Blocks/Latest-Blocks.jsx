@@ -3,9 +3,19 @@ import { Table, Label } from "semantic-ui-react";
 
 import axios from "axios";
 
-const apiKey = process.env.REACT_APP_ETHERSCAN_API_KEY;
-const endpoint = `https://api.etherscan.io/api`;
-
+const endpoint = `http://localhost:8080`;
+function timeConverter(UNIX_timestamp){
+    var a = new Date(UNIX_timestamp * 1000);
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var year = a.getFullYear();
+    var month = months[a.getMonth()];
+    var date = a.getDate();
+    var hour = a.getHours();
+    var min = a.getMinutes();
+    var sec = a.getSeconds();
+    var time = date + ' ' + month + ' ' + year + ' ' + hour + ':' + min + ':' + sec ;
+    return time;
+}
 class LatestBlocks extends Component {
   constructor(props) {
     super(props);
@@ -25,27 +35,27 @@ class LatestBlocks extends Component {
 
     // check if latest blocks
     if (latestBlock) {
-      for (let i = 0; i < 10; i = i + 1) {
+      for (let i = 0; i < 10    ; i = i + 1) {
         // get the block transaction
         const blockDetail = await axios.get(
           endpoint +
-            `?module=proxy&action=eth_getBlockByNumber&tag=${(
+            `/block/${(
               latestBlock - i
-            ).toString(16)}&boolean=true&apikey=${apiKey}`
+            )}`
         );
 
-        const { result } = blockDetail.data;
+        let { result } = blockDetail.data;
         blocks.push(
           <Table.Row key={i}>
             <Table.Cell>
               <Label color="blue">Bk</Label> {latestBlock - i}
             </Table.Cell>
             <Table.Cell>
-              Miner {result.miner} <br></br>
-              Txs {result.transactions.length}
+              Miner {blockDetail.data.block.header.miner} <br></br>
+              Txs {blockDetail.data.block.payload.length}
             </Table.Cell>
             <Table.Cell>
-              <Label color="blue">Size </Label> {parseInt(result.size)} bytes
+              <Label color="blue">Time </Label> {timeConverter(blockDetail.data.block.header.time)}
             </Table.Cell>
           </Table.Row>
         );

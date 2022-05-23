@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"reflect"
 )
@@ -78,6 +79,7 @@ func GetBlockByHeightOrHash(state *State, height uint64, hash, dataDir string) (
 		}
 		err = json.Unmarshal(scanner.Bytes(), &block)
 		if err != nil {
+			log.Printf("Error: %s", err.Error())
 			return block, err
 		}
 	}

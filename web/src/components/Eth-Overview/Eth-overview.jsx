@@ -5,96 +5,41 @@ import { Card, Grid, Icon } from "semantic-ui-react";
 import LatestBlocks from "../Latest-Blocks/index";
 import LatestTxs from "../Latest-Txs/index";
 
-// import api key from the env variable
-const apiKey = `PKHCZSIUU6QYQ6T32IG6RNWRVHI7T872RG`;
-
-const endpoint = `https://api.etherscan.io/api`;
+const endpoint = `http://localhost:8080`;
 
 class EthOverview extends Component {
   constructor() {
     super();
     this.state = {
-      ethUSD: "",
-      ethBTC: "",
-      blockNo: "",
-      latestBlock: 0,
-      difficulty: "",
-      marketCap: 0,
+      block_hash: "",
+      block_number: 0,
     };
   }
 
   async componentDidMount() {
-    // get the ethereum price
-    const prices = await axios.get(
-      endpoint + `?module=stats&action=ethprice&apikey=${apiKey}`
-    );
-    let { result } = prices.data;
-    this.setState({
-      ethUSD: result.ethusd,
-      ethBTC: result.ethbtc,
-    });
-
-    // get the market cap of ether in USD
-    const marketCap = await axios.get(
-      endpoint + `?module=stats&action=ethsupply&apikey=${apiKey}`
-    );
-
-    result = marketCap.data.result;
-    // in wei
-    const priceWei = result.toString();
-
-    // in ether
-    const priceEth = priceWei.slice(0, priceWei.length - 18);
-    console.log(result, priceWei, priceEth);
-    // convert eth in USD
-    this.setState({
-      marketCap: parseInt(priceEth) * this.state.ethUSD,
-    });
-
     // get the latest block number
     const latestBlock = await axios.get(
-      endpoint + `?module=proxy&action=eth_blockNumber&apikey=${apiKey}`
+      endpoint + `/node/status`
     );
     this.setState({
-      latestBlock: parseInt(latestBlock.data.result),
-      blockNo: latestBlock.data.result, // save block no in hex
-    });
-
-    // get the block difficulty
-    const blockDetail = await axios.get(
-      endpoint +
-        `?module=proxy&action=eth_getBlockByNumber&tag=${latestBlock.data.result}&boolean=true&apikey=${apiKey}`
-    );
-    result = blockDetail.data.result;
-
-    const difficulty = parseInt(result.difficulty).toString();
-
-    // convert difficulty in Terra Hash
-    // instead of dividing it with 10^12 we'll slice it
-    const difficultyTH = `${difficulty.slice(0, 4)}.${difficulty.slice(
-      4,
-      6
-    )} TH`;
-
-    this.setState({
-      difficulty: difficultyTH,
+      block_hash: parseInt(latestBlock.data.block_hash),
+      block_number: latestBlock.data.block_number, // save block no in hex
     });
   }
 
   getLatestBlocks = () => {
-    if (this.state.latestBlock) {
-      return <LatestBlocks latestBlock={this.state.latestBlock}></LatestBlocks>;
+    if (this.state.block_number) {
+      return <LatestBlocks latestBlock={this.state.block_number}></LatestBlocks>;
     }
   };
 
   getLatestTxs = () => {
-    if (this.state.blockNo) {
-      return <LatestTxs blockNo={this.state.blockNo}></LatestTxs>;
+    if (this.state.block_number) {
+      return <LatestTxs blockNo={this.state.block_number}></LatestTxs>;
     }
   };
 
   render() {
-    const { ethUSD, ethBTC, latestBlock, difficulty, marketCap } = this.state;
     return (
       <div>
         <Grid>
@@ -103,48 +48,10 @@ class EthOverview extends Component {
               <Card>
                 <Card.Content>
                   <Card.Header style={{ color: "#1d6fa5" }}>
-                    <Icon name="ethereum"></Icon> ETHER PRICE
-                  </Card.Header>
-                  <Card.Description textAlign="left">
-                    <Icon name="usd"></Icon>
-                    {ethUSD} <Icon name="at"></Icon> {ethBTC}{" "}
-                    <Icon name="bitcoin"></Icon>
-                  </Card.Description>
-                </Card.Content>
-              </Card>
-            </Grid.Column>
-            <Grid.Column width={4}>
-              <Card>
-                <Card.Content>
-                  <Card.Header style={{ color: "#1d6fa5" }}>
                     <Icon name="list alternate outline"></Icon> LATEST BLOCK
                   </Card.Header>
                   <Card.Description textAlign="left">
-                    <Icon name="square"></Icon> {latestBlock}
-                  </Card.Description>
-                </Card.Content>
-              </Card>
-            </Grid.Column>
-            <Grid.Column width={4}>
-              <Card>
-                <Card.Content>
-                  <Card.Header style={{ color: "#1d6fa5" }}>
-                    <Icon name="setting"></Icon> DIFFICULTY
-                  </Card.Header>
-                  <Card.Description textAlign="left">
-                    {difficulty}
-                  </Card.Description>
-                </Card.Content>
-              </Card>
-            </Grid.Column>
-            <Grid.Column width={4}>
-              <Card>
-                <Card.Content>
-                  <Card.Header style={{ color: "#1d6fa5" }}>
-                    <Icon name="world"></Icon> MARKET CAP
-                  </Card.Header>
-                  <Card.Description textAlign="left">
-                    <Icon name="usd"></Icon> {marketCap}
+                    <Icon name="square"></Icon> {this.state.block_hash}
                   </Card.Description>
                 </Card.Content>
               </Card>
