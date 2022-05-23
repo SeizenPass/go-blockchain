@@ -10,17 +10,29 @@ import (
 	"sort"
 )
 
+const TxGas = 21
+const TxGasPriceDefault = 1
+const TxFee = uint(50)
+
 type State struct {
-	Balances map[common.Address]uint
+	Balances      map[common.Address]uint
+	Account2Nonce map[common.Address]uint
 
 	dbFile *os.File
 
 	latestBlock     Block
 	latestBlockHash Hash
 	hasGenesisBlock bool
+
+	miningDifficulty uint
+
+	forkAIP1 uint64
+
+	HashCache   map[string]int64
+	HeightCache map[uint64]int64
 }
 
-func NewStateFromDisk(dataDir string) (*State, error) {
+func NewStateFromDisk(dataDir string, miningDifficult uint) (*State, error) {
 	err := InitDataDirIfNotExists(dataDir, []byte(genesisJson))
 	if err != nil {
 		return nil, err
@@ -36,6 +48,8 @@ func NewStateFromDisk(dataDir string) (*State, error) {
 		balances[account] = balance
 	}
 
+	account2nonce := make(map[common.Address]uint)
+
 	dbFilePath := getBlocksDbFilePath(dataDir)
 	f, err := os.OpenFile(dbFilePath, os.O_APPEND|os.O_RDWR, 0600)
 	if err != nil {
@@ -43,7 +57,12 @@ func NewStateFromDisk(dataDir string) (*State, error) {
 	}
 
 	scanner := bufio.NewScanner(f)
-	state := &State{balances, f, Block{}, Hash{}, false}
+	state := &State{balances, account2nonce, f,
+		Block{}, Hash{}, false, miningDifficult, gen.ForkAIP1,
+		map[string]int64{}, map[uint64]int64{},
+	}
+
+	filePos := int64(0)
 
 	for scanner.Scan() {
 		if err := scanner.Err(); err != nil {
@@ -67,6 +86,10 @@ func NewStateFromDisk(dataDir string) (*State, error) {
 			return nil, err
 		}
 
+		state.HashCache[blockFs.Key.Hex()] = filePos
+		state.HeightCache[blockFs.Value.Header.Number] = filePos
+		filePos += int64(len(blockFsJson)) + 1
+
 		state.latestBlock = blockFs.Value
 		state.latestBlockHash = blockFs.Key
 		state.hasGenesisBlock = true
@@ -86,7 +109,7 @@ func (s *State) AddBlocks(blocks []Block) error {
 }
 
 func (s *State) AddBlock(b Block) (Hash, error) {
-	pendingState := s.copy()
+	pendingState := s.Copy()
 
 	err := applyBlock(b, &pendingState)
 
@@ -110,15 +133,23 @@ func (s *State) AddBlock(b Block) (Hash, error) {
 	fmt.Printf("\nPersisting new Block to disk:\n")
 	fmt.Printf("\t%s\n", blockFsJson)
 
+	fs, _ := s.dbFile.Stat()
+	filePos := fs.Size() + 1
+
 	_, err = s.dbFile.Write(append(blockFsJson, '\n'))
 	if err != nil {
 		return Hash{}, err
 	}
 
+	s.HashCache[blockFs.Key.Hex()] = filePos
+	s.HeightCache[blockFs.Value.Header.Number] = filePos
+
 	s.Balances = pendingState.Balances
+	s.Account2Nonce = pendingState.Account2Nonce
 	s.latestBlockHash = blockHash
 	s.latestBlock = b
 	s.hasGenesisBlock = true
+	s.miningDifficulty = pendingState.miningDifficulty
 
 	return blockHash, nil
 }
@@ -139,22 +170,41 @@ func (s *State) LatestBlockHash() Hash {
 	return s.latestBlockHash
 }
 
-func (s *State) Close() error {
-	return s.dbFile.Close()
+func (s *State) GetNextAccountNonce(account common.Address) uint {
+	return s.Account2Nonce[account] + 1
 }
 
-func (s *State) copy() State {
+func (s *State) ChangeMiningDifficulty(newDifficulty uint) {
+	s.miningDifficulty = newDifficulty
+}
+
+func (s *State) IsAIP1Fork() bool {
+	return s.NextBlockNumber() >= s.forkAIP1
+}
+
+func (s *State) Copy() State {
 	c := State{}
 	c.hasGenesisBlock = s.hasGenesisBlock
 	c.latestBlock = s.latestBlock
 	c.latestBlockHash = s.latestBlockHash
 	c.Balances = make(map[common.Address]uint)
+	c.Account2Nonce = make(map[common.Address]uint)
+	c.miningDifficulty = s.miningDifficulty
+	c.forkAIP1 = s.forkAIP1
 
 	for acc, balance := range s.Balances {
 		c.Balances[acc] = balance
 	}
 
+	for acc, nonce := range s.Account2Nonce {
+		c.Account2Nonce[acc] = nonce
+	}
+
 	return c
+}
+
+func (s *State) Close() error {
+	return s.dbFile.Close()
 }
 
 func applyBlock(b Block, s *State) error {
@@ -173,7 +223,7 @@ func applyBlock(b Block, s *State) error {
 		return err
 	}
 
-	if !IsBlockHashValid(hash) {
+	if !IsBlockHashValid(hash, s.miningDifficulty) {
 		return fmt.Errorf("invalid block hash %x", hash)
 	}
 
@@ -183,6 +233,11 @@ func applyBlock(b Block, s *State) error {
 	}
 
 	s.Balances[b.Header.Miner] += BlockReward
+	if s.IsAIP1Fork() {
+		s.Balances[b.Header.Miner] += b.GasReward()
+	} else {
+		s.Balances[b.Header.Miner] += uint(len(b.TXs)) * TxFee
+	}
 
 	return nil
 }
@@ -193,7 +248,7 @@ func applyTxs(txs []SignedTx, s *State) error {
 	})
 
 	for _, tx := range txs {
-		err := applyTx(tx, s)
+		err := ApplyTx(tx, s)
 		if err != nil {
 			return err
 		}
@@ -201,7 +256,21 @@ func applyTxs(txs []SignedTx, s *State) error {
 	return nil
 }
 
-func applyTx(tx SignedTx, s *State) error {
+func ApplyTx(tx SignedTx, s *State) error {
+	err := ValidateTx(tx, s)
+	if err != nil {
+		return err
+	}
+
+	s.Balances[tx.From] -= tx.Cost(s.IsAIP1Fork())
+	s.Balances[tx.To] += tx.Value
+
+	s.Account2Nonce[tx.From] = tx.Nonce
+
+	return nil
+}
+
+func ValidateTx(tx SignedTx, s *State) error {
 	ok, err := tx.IsAuthentic()
 	if err != nil {
 		return err
@@ -211,12 +280,29 @@ func applyTx(tx SignedTx, s *State) error {
 		return fmt.Errorf("wrong TX. Sender '%s' is forged", tx.From.String())
 	}
 
-	if tx.Value > s.Balances[tx.From] {
-		return fmt.Errorf("wrong TX. Sender '%s' balance is %d AITU. Tx cost is %d AITU", tx.From.String(), s.Balances[tx.From], tx.Value)
+	expectedNonce := s.GetNextAccountNonce(tx.From)
+	if tx.Nonce != expectedNonce {
+		return fmt.Errorf("wrong TX. Sender '%s' next nonce must be '%d', not '%d'", tx.From.String(), expectedNonce, tx.Nonce)
 	}
 
-	s.Balances[tx.From] -= tx.Value
-	s.Balances[tx.To] += tx.Value
+	if s.IsAIP1Fork() {
+		if tx.Gas != TxGas {
+			return fmt.Errorf("insufficient TX gas %v. required: %v", tx.Gas, TxGas)
+		}
+
+		if tx.GasPrice < TxGasPriceDefault {
+			return fmt.Errorf("insufficient TX gasPrice %v. Required at least: %v", tx.GasPrice, TxGasPriceDefault)
+		}
+	} else {
+		if tx.Gas != 0 || tx.GasPrice != 0 {
+			return fmt.Errorf("invalid TX. `Gas` and `GasPrice` can't be populated before AIP1 fork is active")
+		}
+	}
+
+	if tx.Cost(s.IsAIP1Fork()) > s.Balances[tx.From] {
+		return fmt.Errorf("wrong TX. Sender '%s' balance is %d AITU. Tx cost is %d AITU",
+			tx.From.String(), s.Balances[tx.From], tx.Cost(s.IsAIP1Fork()))
+	}
 
 	return nil
 }

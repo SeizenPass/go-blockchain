@@ -2,6 +2,7 @@ package wallet
 
 import (
 	"crypto/ecdsa"
+	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
 	"github.com/SeizenPass/go-blockchain/database"
@@ -9,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/google/uuid"
 	"io/ioutil"
 	"path/filepath"
 )
@@ -72,16 +74,7 @@ func SignTx(tx database.Tx, privKey *ecdsa.PrivateKey) (database.SignedTx, error
 func Sign(msg []byte, privKey *ecdsa.PrivateKey) (sig []byte, err error) {
 	msgHash := sha256.Sum256(msg)
 
-	sig, err = crypto.Sign(msgHash[:], privKey)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(sig) != crypto.SignatureLength {
-		return nil, fmt.Errorf("wrong size for signature: got %d, want %d", len(sig), crypto.SignatureLength)
-	}
-
-	return sig, nil
+	return crypto.Sign(msgHash[:], privKey)
 }
 
 func Verify(msg, sig []byte) (*ecdsa.PublicKey, error) {
@@ -93,4 +86,24 @@ func Verify(msg, sig []byte) (*ecdsa.PublicKey, error) {
 	}
 
 	return recoveredPubKey, nil
+}
+
+func NewRandomKey() (*keystore.Key, error) {
+	privateKeyECDSA, err := ecdsa.GenerateKey(crypto.S256(), rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+
+	id, err := uuid.NewRandom()
+	if err != nil {
+		return nil, err
+	}
+
+	key := &keystore.Key{
+		Id:         id,
+		Address:    crypto.PubkeyToAddress(privateKeyECDSA.PublicKey),
+		PrivateKey: privateKeyECDSA,
+	}
+
+	return key, nil
 }

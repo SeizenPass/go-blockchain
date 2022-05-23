@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/SeizenPass/go-blockchain/database"
+	"github.com/SeizenPass/go-blockchain/node"
 	"github.com/spf13/cobra"
 	"os"
 )
@@ -28,7 +29,8 @@ func balancesListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List of all balances.",
 		Run: func(cmd *cobra.Command, args []string) {
-			state, err := database.NewStateFromDisk(getDataDirFromCmd(cmd))
+			state, err := database.NewStateFromDisk(getDataDirFromCmd(cmd),
+				node.DefaultMiningDifficulty)
 			if err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
@@ -41,6 +43,15 @@ func balancesListCmd() *cobra.Command {
 
 			for account, balance := range state.Balances {
 				fmt.Println(fmt.Sprintf("%s: %d", account.String(), balance))
+			}
+
+			fmt.Println("")
+			fmt.Printf("Accounts nonces:")
+			fmt.Println("")
+			fmt.Println("___________________")
+			fmt.Println("")
+			for account, nonce := range state.Account2Nonce {
+				fmt.Println(fmt.Sprintf("%s: %d", account.String(), nonce))
 			}
 		},
 	}

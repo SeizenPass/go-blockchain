@@ -1,12 +1,14 @@
 package node
 
 import (
+	"errors"
 	"fmt"
 	"github.com/SeizenPass/go-blockchain/database"
 	"github.com/SeizenPass/go-blockchain/wallet"
 	"github.com/ethereum/go-ethereum/common"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 type ErrRes struct {
@@ -19,11 +21,13 @@ type BalancesRes struct {
 }
 
 type TxAddReq struct {
-	From    string `json:"from"`
-	FromPwd string `json:"from_pwd"`
-	To      string `json:"to"`
-	Value   uint   `json:"value"`
-	Data    string `json:"data"`
+	From     string `json:"from"`
+	FromPwd  string `json:"from_pwd"`
+	To       string `json:"to"`
+	Gas      uint   `json:"gas"`
+	GasPrice uint   `json:"gasPrice"`
+	Value    uint   `json:"value"`
+	Data     string `json:"data"`
 }
 
 type TxAddRes struct {
@@ -35,6 +39,7 @@ type StatusRes struct {
 	Number     uint64              `json:"block_number"`
 	KnownPeers map[string]PeerNode `json:"peers_known"`
 	PendingTXs []database.SignedTx `json:"pending_txs"`
+	Account    common.Address      `json:"account"`
 }
 
 type SyncRes struct {
@@ -47,6 +52,8 @@ type AddPeerRes struct {
 }
 
 func listBalancesHandler(w http.ResponseWriter, r *http.Request, state *database.State) {
+	enableCors(&w)
+
 	writeRes(w, BalancesRes{state.LatestBlockHash(), state.Balances})
 }
 
@@ -70,7 +77,8 @@ func txAddHandler(w http.ResponseWriter, r *http.Request, node *Node) {
 		return
 	}
 
-	tx := database.NewTx(from, database.NewAccount(req.To), req.Value, req.Data)
+	nonce := node.state.GetNextAccountNonce(from)
+	tx := database.NewTx(from, database.NewAccount(req.To), req.Gas, req.GasPrice, req.Value, nonce, req.Data)
 
 	signedTx, err := wallet.SignTxWithKeystoreAccount(tx, from, req.FromPwd, wallet.GetKeystoreDirPath(node.dataDir))
 	if err != nil {
@@ -88,11 +96,14 @@ func txAddHandler(w http.ResponseWriter, r *http.Request, node *Node) {
 }
 
 func statusHandler(w http.ResponseWriter, r *http.Request, node *Node) {
+	enableCors(&w)
+
 	res := StatusRes{
 		Hash:       node.state.LatestBlockHash(),
 		Number:     node.state.LatestBlock().Header.Number,
 		KnownPeers: node.knownPeers,
 		PendingTXs: node.getPendingTXsAsArray(),
+		Account:    database.NewAccount(node.info.Account.String()),
 	}
 
 	writeRes(w, res)
@@ -135,4 +146,36 @@ func addPeerHandler(w http.ResponseWriter, r *http.Request, node *Node) {
 	fmt.Printf("Peer '%s' was added into KnownPeers\n", peer.TcpAddress())
 
 	writeRes(w, AddPeerRes{true, ""})
+}
+
+func blockByNumberOrHash(w http.ResponseWriter, r *http.Request, node *Node) {
+	enableCors(&w)
+
+	errorParamsRequired := errors.New("height or hash param is required")
+
+	params := strings.Split(r.URL.Path, "/")[1:]
+	if len(params) < 2 {
+		writeErrRes(w, errorParamsRequired)
+		return
+	}
+
+	p := strings.TrimSpace(params[1])
+	if len(p) == 0 {
+		writeErrRes(w, errorParamsRequired)
+		return
+	}
+
+	hsh := ""
+	height, err := strconv.ParseUint(p, 10, 64)
+	if err != nil {
+		hsh = p
+	}
+
+	block, err := database.GetBlockByHeightOrHash(node.state, height, hsh, node.dataDir)
+	if err != nil {
+		writeErrRes(w, err)
+		return
+	}
+
+	writeRes(w, block)
 }
