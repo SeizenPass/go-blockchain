@@ -31,6 +31,8 @@ const endpointAddPeerQueryKeyMiner = "miner"
 const miningIntervalSeconds = 10
 const DefaultMiningDifficulty = 3
 
+const endpointBlockByNumberOrHash = "/block/"
+
 type PeerNode struct {
 	IP          string         `json:"ip"`
 	Port        uint64         `json:"port"`
@@ -132,6 +134,10 @@ func (n *Node) serveHttp(ctx context.Context, isSSLDisabled bool, sslEmail strin
 
 	handler.HandleFunc(endpointAddPeer, func(w http.ResponseWriter, r *http.Request) {
 		addPeerHandler(w, r, n)
+	})
+
+	handler.HandleFunc(endpointBlockByNumberOrHash, func(w http.ResponseWriter, r *http.Request) {
+		blockByNumberOrHash(w, r, n)
 	})
 
 	if isSSLDisabled {
