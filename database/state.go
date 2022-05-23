@@ -90,8 +90,6 @@ func NewStateFromDisk(dataDir string, miningDifficult uint) (*State, error) {
 		state.HeightCache[blockFs.Value.Header.Number] = filePos
 		filePos += int64(len(blockFsJson)) + 1
 
-		fmt.Printf("filePos init: %d", filePos)
-
 		state.latestBlock = blockFs.Value
 		state.latestBlockHash = blockFs.Key
 		state.hasGenesisBlock = true
@@ -138,7 +136,6 @@ func (s *State) AddBlock(b Block) (Hash, error) {
 	fs, _ := s.dbFile.Stat()
 	filePos := fs.Size()
 
-	fmt.Printf("filePost addBlock: %d", filePos)
 	_, err = s.dbFile.Write(append(blockFsJson, '\n'))
 	if err != nil {
 		return Hash{}, err
