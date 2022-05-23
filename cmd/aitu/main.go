@@ -7,8 +7,11 @@ import (
 	"os"
 )
 
+const flagKeystoreFile = "keystore"
 const flagDataDir = "datadir"
 const flagMiner = "miner"
+const flagSSLEmail = "ssl-email"
+const flagDisableSSL = "disable-ssl"
 const flagIP = "ip"
 const flagPort = "port"
 const flagBootstrapAcc = "bootstrap-account"
@@ -38,6 +41,11 @@ func main() {
 func addDefaultRequiredFlags(cmd *cobra.Command) {
 	cmd.Flags().String(flagDataDir, "", "Absolute path to the node data dir where the DB will/is stored")
 	cmd.MarkFlagRequired(flagDataDir)
+}
+
+func addKeystoreFlag(cmd *cobra.Command) {
+	cmd.Flags().String(flagKeystoreFile, "", "Absolute path to the encrypted keystore file")
+	cmd.MarkFlagRequired(flagKeystoreFile)
 }
 
 func getDataDirFromCmd(cmd *cobra.Command) string {

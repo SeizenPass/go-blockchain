@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/SeizenPass/go-blockchain/database"
-	"github.com/SeizenPass/go-blockchain/fs"
 	"github.com/ethereum/go-ethereum/common"
 	"math/rand"
 	"time"
@@ -22,7 +21,7 @@ func NewPendingBlock(parent database.Hash, number uint64, miner common.Address, 
 	return PendingBlock{parent, number, uint64(time.Now().Unix()), miner, txs}
 }
 
-func Mine(ctx context.Context, pb PendingBlock) (database.Block, error) {
+func Mine(ctx context.Context, pb PendingBlock, miningDifficulty uint) (database.Block, error) {
 	if len(pb.txs) == 0 {
 		return database.Block{}, fmt.Errorf("mining empty block is not allowed")
 	}
@@ -33,7 +32,7 @@ func Mine(ctx context.Context, pb PendingBlock) (database.Block, error) {
 	var hash database.Hash
 	var nonce uint32
 
-	for !database.IsBlockHashValid(hash) {
+	for !database.IsBlockHashValid(hash, miningDifficulty) {
 		select {
 		case <-ctx.Done():
 			fmt.Println("Mining cancelled!")
@@ -59,7 +58,7 @@ func Mine(ctx context.Context, pb PendingBlock) (database.Block, error) {
 		hash = blockHash
 	}
 
-	fmt.Printf("\nMined new Block '%x' using PoW🎉🎉🎉%s:\n", hash, fs.Unicode("\\U1F389"))
+	fmt.Printf("\nMined new Block '%x' using PoW🎉🎉🎉 :\n", hash)
 	fmt.Printf("\tHeight: '%v'\n", block.Header.Number)
 	fmt.Printf("\tNonce: '%v'\n", block.Header.Nonce)
 	fmt.Printf("\tCreated: '%v'\n", block.Header.Time)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/SeizenPass/go-blockchain/database"
 	"github.com/SeizenPass/go-blockchain/wallet"
+	"github.com/caddyserver/certmagic"
 	"github.com/ethereum/go-ethereum/common"
 	"net/http"
 	"time"
@@ -28,6 +29,9 @@ const endpointAddPeerQueryKeyPort = "port"
 const endpointAddPeerQueryKeyMiner = "miner"
 
 const miningIntervalSeconds = 10
+const DefaultMiningDifficulty = 3
+
+const endpointBlockByNumberOrHash = "/block/"
 
 type PeerNode struct {
 	IP          string         `json:"ip"`
@@ -46,28 +50,33 @@ type Node struct {
 	dataDir string
 	info    PeerNode
 
-	state           *database.State
-	knownPeers      map[string]PeerNode
-	pendingTXs      map[string]database.SignedTx
-	archivedTXs     map[string]database.SignedTx
-	newSyncedBlocks chan database.Block
-	newPendingTXs   chan database.SignedTx
-	isMining        bool
+	state *database.State
+
+	pendingState *database.State
+
+	knownPeers       map[string]PeerNode
+	pendingTXs       map[string]database.SignedTx
+	archivedTXs      map[string]database.SignedTx
+	newSyncedBlocks  chan database.Block
+	newPendingTXs    chan database.SignedTx
+	isMining         bool
+	miningDifficulty uint
 }
 
-func New(dataDir string, ip string, port uint64, acc common.Address, bootstrap PeerNode) *Node {
+func New(dataDir string, ip string, port uint64, acc common.Address, bootstrap PeerNode, miningDifficulty uint) *Node {
 	knownPeers := make(map[string]PeerNode)
 	knownPeers[bootstrap.TcpAddress()] = bootstrap
 
 	return &Node{
-		dataDir:         dataDir,
-		info:            NewPeerNode(ip, port, false, acc, true),
-		knownPeers:      knownPeers,
-		pendingTXs:      make(map[string]database.SignedTx),
-		archivedTXs:     make(map[string]database.SignedTx),
-		newSyncedBlocks: make(chan database.Block),
-		newPendingTXs:   make(chan database.SignedTx, 10000),
-		isMining:        false,
+		dataDir:          dataDir,
+		info:             NewPeerNode(ip, port, false, acc, true),
+		knownPeers:       knownPeers,
+		pendingTXs:       make(map[string]database.SignedTx),
+		archivedTXs:      make(map[string]database.SignedTx),
+		newSyncedBlocks:  make(chan database.Block),
+		newPendingTXs:    make(chan database.SignedTx, 10000),
+		isMining:         false,
+		miningDifficulty: miningDifficulty,
 	}
 }
 
@@ -75,16 +84,19 @@ func NewPeerNode(ip string, port uint64, isBootstrap bool, acc common.Address, c
 	return PeerNode{ip, port, isBootstrap, acc, connected}
 }
 
-func (n *Node) Run(ctx context.Context) error {
+func (n *Node) Run(ctx context.Context, isSSLDisabled bool, sslEmail string) error {
 	fmt.Println(fmt.Sprintf("Listening on: %s:%d", n.info.IP, n.info.Port))
 
-	state, err := database.NewStateFromDisk(n.dataDir)
+	state, err := database.NewStateFromDisk(n.dataDir, n.miningDifficulty)
 	if err != nil {
 		return err
 	}
 	defer state.Close()
 
 	n.state = state
+
+	pendingState := state.Copy()
+	n.pendingState = &pendingState
 
 	fmt.Println("Blockchain state:")
 	fmt.Printf("	- height %d\n", n.state.LatestBlock().Header.Number)
@@ -93,10 +105,19 @@ func (n *Node) Run(ctx context.Context) error {
 	go n.sync(ctx)
 	go n.mine(ctx)
 
+	return n.serveHttp(ctx, isSSLDisabled, sslEmail)
+}
+
+func (n *Node) LatestBlockHash() database.Hash {
+	return n.state.LatestBlockHash()
+}
+
+func (n *Node) serveHttp(ctx context.Context, isSSLDisabled bool, sslEmail string) error {
+
 	handler := http.NewServeMux()
 
 	handler.HandleFunc("/balances/list", func(w http.ResponseWriter, r *http.Request) {
-		listBalancesHandler(w, r, state)
+		listBalancesHandler(w, r, n.state)
 	})
 
 	handler.HandleFunc("/tx/add", func(w http.ResponseWriter, r *http.Request) {
@@ -115,23 +136,29 @@ func (n *Node) Run(ctx context.Context) error {
 		addPeerHandler(w, r, n)
 	})
 
-	server := &http.Server{Addr: fmt.Sprintf(":%d", n.info.Port), Handler: handler}
+	handler.HandleFunc(endpointBlockByNumberOrHash, func(w http.ResponseWriter, r *http.Request) {
+		blockByNumberOrHash(w, r, n)
+	})
 
-	go func() {
-		<-ctx.Done()
-		_ = server.Close()
-	}()
+	if isSSLDisabled {
+		server := &http.Server{Addr: fmt.Sprintf(":%d", n.info.Port), Handler: handler}
 
-	err = server.ListenAndServe()
-	if err != http.ErrServerClosed {
-		return err
+		go func() {
+			<-ctx.Done()
+			_ = server.Close()
+		}()
+
+		err := server.ListenAndServe()
+		if err != http.ErrServerClosed {
+			return err
+		}
+
+		return nil
+	} else {
+		certmagic.DefaultACME.Email = sslEmail
+
+		return certmagic.HTTPS([]string{n.info.IP}, handler)
 	}
-
-	return nil
-}
-
-func (n *Node) LatestBlockHash() database.Hash {
-	return n.state.LatestBlockHash()
 }
 
 func (n *Node) mine(ctx context.Context) error {
@@ -181,14 +208,14 @@ func (n *Node) minePendingTXs(ctx context.Context) error {
 		n.getPendingTXsAsArray(),
 	)
 
-	minedBlock, err := Mine(ctx, blockToMine)
+	minedBlock, err := Mine(ctx, blockToMine, n.miningDifficulty)
 	if err != nil {
 		return err
 	}
 
 	n.removeMinedPendingTXs(minedBlock)
 
-	_, err = n.state.AddBlock(minedBlock)
+	err = n.addBlock(minedBlock)
 	if err != nil {
 		return err
 	}
@@ -210,6 +237,11 @@ func (n *Node) removeMinedPendingTXs(block database.Block) {
 			delete(n.pendingTXs, txHash.Hex())
 		}
 	}
+}
+
+func (n *Node) ChangeMiningDifficulty(newDifficulty uint) {
+	n.miningDifficulty = newDifficulty
+	n.state.ChangeMiningDifficulty(newDifficulty)
 }
 
 func (n *Node) AddPeer(peer PeerNode) {
@@ -241,6 +273,11 @@ func (n *Node) AddPendingTX(tx database.SignedTx, fromPeer PeerNode) error {
 		return err
 	}
 
+	err = n.validateTxBeforeAddingToMempool(tx)
+	if err != nil {
+		return err
+	}
+
 	_, isAlreadyPending := n.pendingTXs[txHash.Hex()]
 	_, isArchived := n.archivedTXs[txHash.Hex()]
 
@@ -263,4 +300,20 @@ func (n *Node) getPendingTXsAsArray() []database.SignedTx {
 	}
 
 	return txs
+}
+
+func (n *Node) addBlock(block database.Block) error {
+	_, err := n.state.AddBlock(block)
+	if err != nil {
+		return err
+	}
+
+	pendingState := n.state.Copy()
+	n.pendingState = &pendingState
+
+	return nil
+}
+
+func (n *Node) validateTxBeforeAddingToMempool(tx database.SignedTx) error {
+	return database.ApplyTx(tx, n.pendingState)
 }
